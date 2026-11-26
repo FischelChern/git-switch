@@ -5,8 +5,11 @@
 
 use eframe::egui;
 
-use crate::app::{App, LogKind};
+use git_switch::model::repository::Repository;
+
+use crate::app::{App, DetailTab, LogKind};
 use crate::ui::theme::*;
+use git_switch::git::ChangeStatus;
 
 /// 左侧：平台 · 身份树。
 pub fn sidebar(ctx: &egui::Context, app: &mut App) {
@@ -231,7 +234,7 @@ pub fn projects(ctx: &egui::Context, app: &mut App) {
         });
 }
 
-/// 右侧：项目详情（平台锁定 / 身份可切 / 项目覆盖 / 写入范围）。
+/// 右侧：项目详情。顶部固定信息 + tab（概览 / git / 文件）。
 pub fn detail(ctx: &egui::Context, app: &mut App) {
     egui::CentralPanel::default().show(ctx, |ui| {
         let Some(repo) = app.current_repo().cloned() else {
@@ -243,7 +246,6 @@ pub fn detail(ctx: &egui::Context, app: &mut App) {
         };
 
         let platform = app.cfg.platform(&repo.platform_id).cloned();
-        let identity = app.identity_of(&repo).cloned();
 
         // 标题
         ui.add_space(6.0);
@@ -261,6 +263,36 @@ pub fn detail(ctx: &egui::Context, app: &mut App) {
                 .color(MUTED)
                 .size(11.0),
             );
+            if let Some(status) = &app.status {
+                if let Some(branch) = &status.branch {
+                    ui.label(
+                        egui::RichText::new(format!("◈ {branch}"))
+                            .color(MUTED)
+                            .size(11.0),
+                    );
+                }
+                if status.ahead > 0 {
+                    ui.label(
+                        egui::RichText::new(format!("↑{}", status.ahead))
+                            .color(OK)
+                            .size(10.5),
+                    );
+                }
+                if status.behind > 0 {
+                    ui.label(
+                        egui::RichText::new(format!("↓{}", status.behind))
+                            .color(WARN)
+                            .size(10.5),
+                    );
+                }
+                if !status.files.is_empty() {
+                    ui.label(
+                        egui::RichText::new(format!("{} 变更", status.files.len()))
+                            .color(WARN)
+                            .size(10.5),
+                    );
+                }
+            }
         });
         ui.label(
             egui::RichText::new(repo.path.display().to_string())
@@ -268,167 +300,376 @@ pub fn detail(ctx: &egui::Context, app: &mut App) {
                 .size(10.5),
         );
         ui.label(egui::RichText::new(&repo.remote_url).color(DIM).size(10.5));
-        ui.add_space(8.0);
 
-        // 平台（锁定）+ 身份（可切）
+        // tab 栏
+        ui.add_space(6.0);
         ui.horizontal(|ui| {
-            ui.vertical(|ui| {
-                ui.label(
-                    egui::RichText::new("平台 · 由远程地址决定")
-                        .color(DIM)
-                        .size(10.0),
-                );
-                let name = platform
-                    .as_ref()
-                    .map(|p| p.name.clone())
-                    .unwrap_or_else(|| "未识别".to_string());
-                ui.add_enabled(
-                    false,
-                    egui::Button::new(egui::RichText::new(format!("🔒 {name}")).size(12.0)),
-                )
-                .on_disabled_hover_text("平台由仓库远程地址决定，不可切换");
-            });
-
-            ui.add_space(12.0);
-
-            ui.vertical(|ui| {
-                ui.label(
-                    egui::RichText::new("git 身份 · 只作用于本项目")
-                        .color(DIM)
-                        .size(10.0),
-                );
-                let identities = app.identities_of(&repo.platform_id);
-                let current_label = identity
-                    .as_ref()
-                    .map(|i| i.label.clone())
-                    .unwrap_or_else(|| "未选择身份".to_string());
-                let mut chosen = repo.identity_id.clone();
-
-                egui::ComboBox::from_id_salt("identity_combo")
-                    .selected_text(egui::RichText::new(current_label).size(12.0))
-                    .width(220.0)
-                    .show_ui(ui, |ui| {
-                        for id in &identities {
-                            let label = format!("{} · {}", id.label, id.auth.label());
-                            ui.selectable_value(&mut chosen, Some(id.id.clone()), label);
-                        }
-                    });
-
-                if chosen != repo.identity_id {
-                    if let Some(new_id) = chosen {
-                        app.switch_identity(&repo.id, &new_id);
-                    }
+            for t in DetailTab::all() {
+                if ui.selectable_label(app.tab == t, t.label()).clicked() {
+                    app.tab = t;
+                }
+            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.small_button("重新读取").clicked() {
+                    app.reload_repo();
                 }
             });
         });
-
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            if ui.button("重新应用到此仓库").clicked() {
-                if let Some(id) = repo.identity_id.clone() {
-                    app.switch_identity(&repo.id, &id);
-                } else {
-                    app.flash("请先选择身份");
-                }
-            }
-            if ui.button("清除本地身份（跟随全局）").clicked() {
-                app.clear_local_identity(&repo.id);
-            }
-        });
-
         ui.separator();
 
-        // 项目覆盖
-        ui.label(
-            egui::RichText::new("项目覆盖 · 优先级高于身份默认值")
-                .color(DIM)
-                .size(10.0),
-        );
-        let repo_id = repo.id.clone();
-        let identity_name = identity
-            .as_ref()
-            .map(|i| i.user_name.clone())
-            .unwrap_or_default();
-        let identity_email = identity
-            .as_ref()
-            .map(|i| i.user_email.clone())
-            .unwrap_or_default();
-
-        let mut apply_clicked = false;
-        {
-            let buf = app.override_buf(&repo_id);
-            ui.horizontal(|ui| {
-                ui.checkbox(&mut buf.on, "启用覆盖");
-                ui.add_enabled(
-                    buf.on,
-                    egui::TextEdit::singleline(&mut buf.name)
-                        .hint_text(if buf.on {
-                            "项目专用 user.name"
-                        } else {
-                            "继承身份默认"
-                        })
-                        .desired_width(180.0),
-                );
-                ui.add_enabled(
-                    buf.on,
-                    egui::TextEdit::singleline(&mut buf.email)
-                        .hint_text(if buf.on {
-                            "项目专用 user.email"
-                        } else {
-                            "继承身份默认"
-                        })
-                        .desired_width(220.0),
-                );
-                if ui.button("应用覆盖").clicked() {
-                    apply_clicked = true;
-                }
-            });
-
-            // 生效值预览
-            let eff_name = if buf.on && !buf.name.trim().is_empty() {
-                buf.name.trim().to_string()
-            } else {
-                identity_name.clone()
-            };
-            let eff_email = if buf.on && !buf.email.trim().is_empty() {
-                buf.email.trim().to_string()
-            } else {
-                identity_email.clone()
-            };
-            let source = if buf.on && (!buf.name.trim().is_empty() || !buf.email.trim().is_empty())
-            {
-                "项目覆盖"
-            } else {
-                "身份默认"
-            };
-            ui.label(
-                egui::RichText::new(format!("生效：{eff_name} <{eff_email}>（来源：{source}）"))
-                    .color(if source == "项目覆盖" { OK } else { MUTED })
-                    .size(11.0),
-            );
+        match app.tab {
+            DetailTab::Overview => overview(ui, app, &repo),
+            DetailTab::Git => git_tab(ui, app),
+            DetailTab::Files => files_tab(ui, app),
         }
-        if apply_clicked {
-            app.apply_override(&repo_id);
-        }
-
-        ui.add_space(6.0);
-        ui.separator();
-
-        // 写入范围提示
-        egui::Frame::group(ui.style())
-            .fill(PANEL)
-            .stroke(egui::Stroke::new(1.0_f32, LINE))
-            .show(ui, |ui| {
-                ui.label(
-                    egui::RichText::new(format!(
-                        "写入范围：仅 {}/.git/config，不改动 ~/.gitconfig",
-                        repo.path.display()
-                    ))
-                    .color(WARN)
-                    .size(11.0),
-                );
-            });
     });
+}
+
+/// 概览：平台锁定、身份切换、项目覆盖、写入范围。
+fn overview(ui: &mut egui::Ui, app: &mut App, repo: &Repository) {
+    let platform = app.cfg.platform(&repo.platform_id).cloned();
+    let identity = app.identity_of(repo).cloned();
+
+    ui.horizontal(|ui| {
+        ui.vertical(|ui| {
+            ui.label(
+                egui::RichText::new("平台 · 由远程地址决定")
+                    .color(DIM)
+                    .size(10.0),
+            );
+            let name = platform
+                .as_ref()
+                .map(|p| p.name.clone())
+                .unwrap_or_else(|| "未识别".to_string());
+            ui.add_enabled(
+                false,
+                egui::Button::new(egui::RichText::new(format!("🔒 {name}")).size(12.0)),
+            )
+            .on_disabled_hover_text("平台由仓库远程地址决定，不可切换");
+        });
+
+        ui.add_space(12.0);
+
+        ui.vertical(|ui| {
+            ui.label(
+                egui::RichText::new("git 身份 · 只作用于本项目")
+                    .color(DIM)
+                    .size(10.0),
+            );
+            let identities = app.identities_of(&repo.platform_id);
+            let current_label = identity
+                .as_ref()
+                .map(|i| i.label.clone())
+                .unwrap_or_else(|| "未选择身份".to_string());
+            let mut chosen = repo.identity_id.clone();
+
+            egui::ComboBox::from_id_salt("identity_combo")
+                .selected_text(egui::RichText::new(current_label).size(12.0))
+                .width(220.0)
+                .show_ui(ui, |ui| {
+                    for id in &identities {
+                        let label = format!("{} · {}", id.label, id.auth.label());
+                        ui.selectable_value(&mut chosen, Some(id.id.clone()), label);
+                    }
+                });
+
+            if chosen != repo.identity_id {
+                if let Some(new_id) = chosen {
+                    app.switch_identity(&repo.id, &new_id);
+                }
+            }
+        });
+    });
+
+    ui.add_space(6.0);
+    ui.horizontal(|ui| {
+        if ui.button("重新应用到此仓库").clicked() {
+            if let Some(id) = repo.identity_id.clone() {
+                app.switch_identity(&repo.id, &id);
+            } else {
+                app.flash("请先选择身份");
+            }
+        }
+        if ui.button("清除本地身份（跟随全局）").clicked() {
+            app.clear_local_identity(&repo.id);
+        }
+    });
+
+    ui.separator();
+
+    // 项目覆盖
+    ui.label(
+        egui::RichText::new("项目覆盖 · 优先级高于身份默认值")
+            .color(DIM)
+            .size(10.0),
+    );
+    let repo_id = repo.id.clone();
+    let identity_name = identity
+        .as_ref()
+        .map(|i| i.user_name.clone())
+        .unwrap_or_default();
+    let identity_email = identity
+        .as_ref()
+        .map(|i| i.user_email.clone())
+        .unwrap_or_default();
+
+    let mut apply_clicked = false;
+    {
+        let buf = app.override_buf(&repo_id);
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut buf.on, "启用覆盖");
+            ui.add_enabled(
+                buf.on,
+                egui::TextEdit::singleline(&mut buf.name)
+                    .hint_text(if buf.on {
+                        "项目专用 user.name"
+                    } else {
+                        "继承身份默认"
+                    })
+                    .desired_width(180.0),
+            );
+            ui.add_enabled(
+                buf.on,
+                egui::TextEdit::singleline(&mut buf.email)
+                    .hint_text(if buf.on {
+                        "项目专用 user.email"
+                    } else {
+                        "继承身份默认"
+                    })
+                    .desired_width(220.0),
+            );
+            if ui.button("应用覆盖").clicked() {
+                apply_clicked = true;
+            }
+        });
+
+        let eff_name = if buf.on && !buf.name.trim().is_empty() {
+            buf.name.trim().to_string()
+        } else {
+            identity_name.clone()
+        };
+        let eff_email = if buf.on && !buf.email.trim().is_empty() {
+            buf.email.trim().to_string()
+        } else {
+            identity_email.clone()
+        };
+        let source = if buf.on && (!buf.name.trim().is_empty() || !buf.email.trim().is_empty()) {
+            "项目覆盖"
+        } else {
+            "身份默认"
+        };
+        ui.label(
+            egui::RichText::new(format!("生效：{eff_name} <{eff_email}>（来源：{source}）"))
+                .color(if source == "项目覆盖" { OK } else { MUTED })
+                .size(11.0),
+        );
+    }
+    if apply_clicked {
+        app.apply_override(&repo_id);
+    }
+
+    ui.add_space(6.0);
+    ui.separator();
+    egui::Frame::group(ui.style())
+        .fill(PANEL)
+        .stroke(egui::Stroke::new(1.0_f32, LINE))
+        .show(ui, |ui| {
+            ui.label(
+                egui::RichText::new(format!(
+                    "写入范围：仅 {}/.git/config，不改动 ~/.gitconfig",
+                    repo.path.display()
+                ))
+                .color(WARN)
+                .size(11.0),
+            );
+        });
+}
+
+/// 泳道配色。
+const LANE_COLORS: [egui::Color32; 6] = [
+    ACCENT,
+    WARN,
+    OK,
+    egui::Color32::from_rgb(0xc7, 0x92, 0xea),
+    egui::Color32::from_rgb(0xff, 0x8f, 0x6b),
+    egui::Color32::from_rgb(0x4e, 0xc9, 0xb0),
+];
+
+/// 提交图。
+fn git_tab(ui: &mut egui::Ui, app: &mut App) {
+    let Some(graph) = app.graph.clone() else {
+        ui.add_space(16.0);
+        let msg = app
+            .graph_error
+            .clone()
+            .unwrap_or_else(|| "没有提交记录".to_string());
+        ui.label(egui::RichText::new(msg).color(DIM).size(12.0));
+        return;
+    };
+
+    let lane_w = 14.0_f32;
+    let row_h = 26.0_f32;
+    let graph_w = graph.layout.lane_count as f32 * lane_w + 16.0;
+    let lane_count = graph.layout.lane_count;
+
+    ui.label(
+        egui::RichText::new(format!(
+            "{} 条提交 · {} 条泳道",
+            graph.commits.len(),
+            lane_count
+        ))
+        .color(DIM)
+        .size(10.0),
+    );
+    ui.separator();
+
+    egui::ScrollArea::vertical()
+        .id_salt("git_graph_scroll")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            for (commit, row) in graph.commits.iter().zip(graph.layout.rows.iter()) {
+                ui.horizontal(|ui| {
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(graph_w, row_h), egui::Sense::hover());
+                    let painter = ui.painter_at(rect);
+                    let x = |l: usize| rect.left() + 8.0 + l as f32 * lane_w;
+                    let color = |l: usize| LANE_COLORS[l % LANE_COLORS.len()];
+                    let mid = rect.center().y;
+
+                    // 与本行无关的贯穿线
+                    for l in 0..lane_count {
+                        if l == row.lane {
+                            continue;
+                        }
+                        if l < row.lanes_before && l < row.lanes_after {
+                            painter.line_segment(
+                                [
+                                    egui::pos2(x(l), rect.top()),
+                                    egui::pos2(x(l), rect.bottom()),
+                                ],
+                                egui::Stroke::new(1.4_f32, color(l)),
+                            );
+                        }
+                    }
+                    // 侧分支汇入
+                    for &l in &row.merges_in {
+                        painter.line_segment(
+                            [egui::pos2(x(l), rect.top()), egui::pos2(x(row.lane), mid)],
+                            egui::Stroke::new(1.4_f32, color(l)),
+                        );
+                    }
+                    // 本提交自己的竖线
+                    if row.lanes_before > row.lane {
+                        painter.line_segment(
+                            [
+                                egui::pos2(x(row.lane), rect.top()),
+                                egui::pos2(x(row.lane), mid),
+                            ],
+                            egui::Stroke::new(1.6_f32, color(row.lane)),
+                        );
+                    }
+                    // 到父提交
+                    for &p in &row.parent_lanes {
+                        painter.line_segment(
+                            [
+                                egui::pos2(x(row.lane), mid),
+                                egui::pos2(x(p), rect.bottom()),
+                            ],
+                            egui::Stroke::new(1.4_f32, color(p)),
+                        );
+                    }
+                    // 提交点
+                    let c = egui::pos2(x(row.lane), mid);
+                    painter.circle_filled(c, 4.0, color(row.lane));
+                    if commit.is_merge() {
+                        painter.circle_filled(c, 1.8, BG);
+                    }
+
+                    ui.label(
+                        egui::RichText::new(commit.short_id())
+                            .monospace()
+                            .size(10.5)
+                            .color(DIM),
+                    );
+                    ui.label(egui::RichText::new(&commit.summary).size(12.0));
+                    for r in &commit.refs {
+                        ui.label(egui::RichText::new(r).color(ACCENT).size(9.5));
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(egui::RichText::new(&commit.date).color(DIM).size(10.0));
+                        ui.label(egui::RichText::new(&commit.author).color(DIM).size(10.0));
+                    });
+                });
+            }
+        });
+}
+
+/// 工作区变更列表。
+fn files_tab(ui: &mut egui::Ui, app: &mut App) {
+    let Some(status) = app.status.clone() else {
+        ui.add_space(16.0);
+        ui.label(
+            egui::RichText::new("未能读取工作区状态")
+                .color(DIM)
+                .size(12.0),
+        );
+        return;
+    };
+
+    if status.files.is_empty() {
+        ui.add_space(16.0);
+        ui.label(
+            egui::RichText::new("工作区干净，没有未提交改动")
+                .color(OK)
+                .size(12.0),
+        );
+        return;
+    }
+
+    ui.label(
+        egui::RichText::new(format!("{} 个变更文件", status.files.len()))
+            .color(DIM)
+            .size(10.0),
+    );
+    ui.separator();
+
+    egui::ScrollArea::vertical()
+        .id_salt("files_scroll")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            for f in &status.files {
+                ui.horizontal(|ui| {
+                    let color = match f.status {
+                        ChangeStatus::Added => OK,
+                        ChangeStatus::Modified => WARN,
+                        ChangeStatus::Deleted => ERR,
+                        ChangeStatus::Renamed | ChangeStatus::Copied => ACCENT,
+                        ChangeStatus::Untracked => MUTED,
+                        ChangeStatus::Conflicted => ERR,
+                        ChangeStatus::TypeChanged => WARN,
+                    };
+                    ui.label(
+                        egui::RichText::new(f.status.letter())
+                            .monospace()
+                            .size(11.0)
+                            .color(color),
+                    );
+                    ui.label(egui::RichText::new(&f.path).monospace().size(11.5));
+                    if let Some(old) = &f.original_path {
+                        ui.label(
+                            egui::RichText::new(format!("← {old}"))
+                                .color(DIM)
+                                .size(10.5),
+                        );
+                    }
+                    ui.label(
+                        egui::RichText::new(f.status.label())
+                            .color(color)
+                            .size(10.0),
+                    );
+                });
+            }
+        });
 }
 
 /// 底部：终端日志。

@@ -7,5 +7,9 @@
 
 pub mod config;
 pub mod exec;
+pub mod log;
+pub mod status;
 
 pub use exec::{GitError, GitExecutor, GitOutput};
+pub use log::{Commit, GraphData, parse_log, read_graph};
+pub use status::{ChangeStatus, FileChange, WorkStatus, read_status};

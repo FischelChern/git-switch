@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use eframe::egui;
 
 use git_switch::git::config as gitcfg;
+use git_switch::git::{self as gitmod, GraphData, WorkStatus};
 use git_switch::model::identity::Identity;
 use git_switch::model::repository::{IdentityOverride, Repository};
 use git_switch::store::Config;
@@ -15,6 +16,33 @@ use git_switch::store::Config;
 use crate::ui;
 
 /// 日志行的类型，决定颜色。
+/// 详情区的 tab。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DetailTab {
+    /// 概览：平台 / 身份 / 项目覆盖。
+    Overview,
+    /// 提交图。
+    Git,
+    /// 工作区变更。
+    Files,
+}
+
+impl DetailTab {
+    /// tab 标题。
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Overview => "概览",
+            Self::Git => "git",
+            Self::Files => "文件",
+        }
+    }
+
+    /// 全部 tab，按显示顺序。
+    pub fn all() -> [Self; 3] {
+        [Self::Overview, Self::Git, Self::Files]
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogKind {
     /// 执行的命令。
@@ -71,6 +99,14 @@ pub struct App {
     pub config_path: String,
     /// 实际使用的中文字体路径，`None` 表示没找到。
     pub font_path: Option<String>,
+    /// 详情区当前 tab。
+    pub tab: DetailTab,
+    /// 当前项目的提交图，读取失败时为 `None`。
+    pub graph: Option<GraphData>,
+    /// 提交图读取失败的原因。
+    pub graph_error: Option<String>,
+    /// 当前项目的工作区状态。
+    pub status: Option<WorkStatus>,
 }
 
 impl App {
@@ -124,7 +160,7 @@ impl App {
 
         let expanded = cfg.platforms.iter().map(|p| p.id.clone()).collect();
 
-        Self {
+        let mut app = Self {
             cfg,
             platform,
             repo,
@@ -134,7 +170,13 @@ impl App {
             toast: None,
             config_path: cfg_path,
             font_path,
-        }
+            tab: DetailTab::Overview,
+            graph: None,
+            graph_error: None,
+            status: None,
+        };
+        app.reload_repo();
+        app
     }
 
     // ---- 查询 ----
@@ -222,6 +264,56 @@ impl App {
         self.repo = Some(repo_id.to_string());
         if let Some(pid) = self.cfg.repository(repo_id).map(|r| r.platform_id.clone()) {
             self.platform = Some(pid);
+        }
+        self.reload_repo();
+    }
+
+    /// 重新读取当前项目的提交图与工作区状态。
+    pub fn reload_repo(&mut self) {
+        self.graph = None;
+        self.graph_error = None;
+        self.status = None;
+
+        let Some(repo) = self.current_repo().cloned() else {
+            return;
+        };
+        let path = repo.path.clone();
+
+        self.push_log(
+            LogKind::Cmd,
+            format!("git -C {} log --all -n200", path.display()),
+        );
+        match gitmod::read_graph(&path, 200) {
+            Ok(g) => {
+                self.push_log(
+                    LogKind::Out,
+                    format!(
+                        "{} 条提交 · {} 条泳道",
+                        g.commits.len(),
+                        g.layout.lane_count
+                    ),
+                );
+                self.graph = Some(g);
+            }
+            Err(e) => {
+                self.graph_error = Some(e.to_string());
+                self.push_log(LogKind::Err, format!("读取提交历史失败：{e}"));
+            }
+        }
+
+        match gitmod::read_status(&path) {
+            Ok(s) => {
+                self.push_log(
+                    LogKind::Out,
+                    format!(
+                        "分支 {} · {} 个变更",
+                        s.branch.clone().unwrap_or_else(|| "（分离头指针）".into()),
+                        s.files.len()
+                    ),
+                );
+                self.status = Some(s);
+            }
+            Err(e) => self.push_log(LogKind::Err, format!("读取工作区状态失败：{e}")),
         }
     }
 
