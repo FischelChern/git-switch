@@ -1697,7 +1697,13 @@ function openClone(){
     </div>
 
     <div class="mrow">
-      <div class="mf"><label>克隆到</label><input class="min" id="cDir" value="~/WorkSpace" /></div>
+      <div class="mf"><label>克隆到</label>
+        <div class="rowflex">
+          <input class="min" id="cDir" value="~/WorkSpace" />
+          <button class="btn sm" id="cPick">浏览…</button>
+        </div>
+        <div class="mhint" id="cTarget"></div>
+      </div>
       <div class="mf"><label>目录名</label><input class="min" id="cName" placeholder="自动取仓库名" /></div>
     </div>
 
@@ -1733,6 +1739,25 @@ function openClone(){
     acctEl.innerHTML = acctOptions();
   };
 
+  const targetEl = $("cTarget");
+  const repaintTarget = ()=>{
+    const dir = dirEl.value.trim();
+    const name = nameEl.value.trim() || (parseRemote(urlin.value)?.name ?? "");
+    if (!dir){ targetEl.className = "mhint warn"; targetEl.textContent = "请填写克隆到哪个目录"; return; }
+    const full = dir.replace(/\/+$/,"") + "/" + (name || "<仓库名>");
+    targetEl.className = "mhint mono";
+    targetEl.textContent = `将克隆到 ${full}`;
+  };
+  dirEl.addEventListener("input", repaintTarget);
+  nameEl.addEventListener("input", repaintTarget);
+  const pick = $("cPick");
+  if (pick) pick.onclick = ()=>{
+    // 原型说明：真实实现走系统目录选择器；这里只提示交互位置
+    flash("打开系统目录选择器（原型占位）");
+    termOut("原生目录选择器：Rust 侧需引入 rfd/tauri-dialog，当前版本先用输入框", "ok");
+  };
+  repaintTarget();
+
   const onUrl = ()=>{
     const info = parseRemote(urlin.value);
     if (!urlin.value.trim()){ hintEl.className = "mhint"; hintEl.textContent = "支持 SSH 与 HTTPS 两种写法"; return; }
@@ -1749,6 +1774,7 @@ function openClone(){
     if (!nameEl.value.trim() || nameEl.dataset.auto === "1"){
       nameEl.value = info.name; nameEl.dataset.auto = "1";
     }
+    repaintTarget();
   };
   urlin.addEventListener("input", onUrl);
   nameEl.addEventListener("input", ()=>{ nameEl.dataset.auto = "0"; });
