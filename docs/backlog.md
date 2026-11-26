@@ -7,8 +7,8 @@
 
 | ID | 任务 | 验收标准 | 状态 |
 |---|---|---|---|
-| P0-1 | 项目级 `user.name` / `user.email` 覆盖：数据模型加 `IdentityOverride`，详情面板加开关与输入框，写入/清除 `.git/config` | 见 requirements R2.3 的 4 条 AT | todo |
-| P0-2 | 修正「认证」语义：现在是改 `identity.auth` 会影响所有使用该身份的项目 | 要么改为项目级覆盖 `AuthMode`，要么只读展示并明示影响范围（N 个项目） | todo |
+| P0-1 | 项目级 `user.name` / `user.email` 覆盖：数据模型加 `IdentityOverride`，详情面板加开关与输入框，写入/清除 `.git/config` | 见 requirements R2.3 的 4 条 AT | done |
+| P0-2 | 修正「认证」语义：移除项目页的认证切换入口，认证方式随身份决定 | 界面不再有会误改其它项目的入口 | done |
 | P0-3 | 凭据状态可见 + 测试连接 | 新增身份后显示「已保存/未保存」，可点「测试连接」得到真实结果 | todo |
 
 ## P1 — 有壳无实现
@@ -46,7 +46,7 @@
 | P3-2 | `store/config.rs` 原子写 + `store/secret.rs` 钥匙串 | done |
 | P3-3 | `git/exec.rs` 统一执行器（超时 / stderr / 不经 shell） | done |
 | P3-4 | `git/config.rs` 写入与回滚 + 隔离性集成测试 | done |
-| P3-5 | `ui` 三栏骨架对齐 demo | todo |
+| P3-5 | `ui` 三栏骨架对齐 demo（平台·身份树 / 项目 / 详情 / 终端） | done |
 | P3-6 | 三平台构建与打包、CI | todo |
 
 ---

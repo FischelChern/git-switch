@@ -7,9 +7,10 @@ license = "MIT"
 rust-version = "1.85"
 
 [dependencies]
-# GUI
-eframe = "0.37.0"
-egui = "0.37.0"
+# 固定在 API 稳定的 0.31：0.37 把 App::update 改成 App::ui、
+# 并把 SidePanel/TopBottomPanel 合并为统一的 Panel，改动面太大
+eframe = "0.31"
+egui = "0.31"
 
 # 配置与序列化
 serde = { version = "1.0.229", features = ["derive"] }

@@ -117,6 +117,16 @@
   .seg button{height:24px;padding:0 10px;border:0;border-radius:6px;cursor:pointer;background:transparent;color:var(--muted);font-size:11.5px;white-space:nowrap}
   .seg button.on{background:#2a3140;color:#dfe7f5;box-shadow:inset 0 0 0 1px #3a4453}
 
+  /* 项目级覆盖 */
+  .override{display:flex;align-items:center;gap:8px;padding:0 16px 8px;flex:none;flex-wrap:wrap}
+  .override .ovlabel{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted);cursor:pointer;white-space:nowrap}
+  .override input.ovin{height:26px;padding:0 8px;border-radius:7px;background:#12151a;border:1px solid var(--line);
+    color:var(--text);font-size:11.5px;outline:none;min-width:0;flex:1 1 150px}
+  .override input.ovin:disabled{background:#171a1f;color:var(--dim);border-style:dashed}
+  .override input.ovin:focus{border-color:#3d6ea8;box-shadow:0 0 0 3px var(--accent-soft)}
+  .override .ovhint{font-size:10.5px;color:var(--dim);white-space:nowrap}
+  .override .ovhint.on{color:var(--ok)}
+
   /* git 操作栏 */
   .gitbar{display:flex;align-items:center;gap:5px;padding:0 16px 8px;flex:none;flex-wrap:wrap}
   .gitbar .sep{width:1px;height:18px;background:var(--line);margin:0 3px}
@@ -417,6 +427,14 @@
             <button data-auth="token">令牌</button>
           </div>
         </div>
+      </div>
+
+      <!-- 项目级覆盖：优先级高于身份默认值 -->
+      <div class="override">
+        <span class="ovlabel" id="ovToggle"><span class="track" id="ovTrack"></span>项目覆盖</span>
+        <input class="ovin" id="ovName" placeholder="项目专用 user.name" />
+        <input class="ovin" id="ovEmail" placeholder="项目专用 user.email" />
+        <span class="ovhint" id="ovHint"></span>
       </div>
 
       <div class="gitbar">
@@ -1230,6 +1248,23 @@ function renderDetail(){
   $("forkN").textContent = r.forks;
   $("watchN").textContent = r.watch;
   $("termHint").textContent = `git-switch · ${r.path}`;
+  // 项目覆盖（demo 用内存态）
+  if (!r.ov) r.ov = { on:false, name:"", email:"" };
+  const ovOn = r.ov.on;
+  $("ovTrack").classList.toggle("on", ovOn);
+  const inN = $("ovName"), inE = $("ovEmail");
+  inN.disabled = !ovOn; inE.disabled = !ovOn;
+  inN.value = ovOn ? r.ov.name : "";
+  inE.value = ovOn ? r.ov.email : "";
+  inN.placeholder = ovOn ? "项目专用 user.name" : a.name + "（身份默认）";
+  inE.placeholder = ovOn ? "项目专用 user.email" : a.email + "（身份默认）";
+  const effName = (ovOn && r.ov.name.trim()) ? r.ov.name.trim() : a.name;
+  const effEmail = (ovOn && r.ov.email.trim()) ? r.ov.email.trim() : a.email;
+  $("ovHint").className = "ovhint" + (ovOn ? " on" : "");
+  $("ovHint").textContent = ovOn
+    ? `生效：${effName} <${effEmail}>`
+    : "关闭时继承身份默认值";
+
   $("chgCnt").textContent = fileList(r.id).length;
   $("prCnt").textContent = (PRS[r.id]||[]).filter(x=>x.state!=="merged").length;
 
@@ -1353,7 +1388,7 @@ function renderDetail(){
   }
 
   $("warnline").innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M12 3 2.5 20h19L12 3z"/><path d="M12 9v5"/></svg>
-    <span>写入范围：仅 <span class="mono">${esc(r.path)}/.git/config</span>，不改动 <span class="mono">~/.gitconfig</span>。当前身份 <span class="mono">${esc(a.name)} &lt;${esc(a.email)}&gt;</span> · ${authLabel(a.auth)}。</span>`;
+    <span>写入范围：仅 <span class="mono">${esc(r.path)}/.git/config</span>，不改动 <span class="mono">~/.gitconfig</span>。生效身份 <span class="mono">${esc(ovOn && r.ov.name.trim() ? r.ov.name.trim() : a.name)} &lt;${esc(ovOn && r.ov.email.trim() ? r.ov.email.trim() : a.email)}&gt;</span> · ${authLabel(a.auth)}${ovOn ? " · 含项目覆盖" : ""}。</span>`;
 }
 
 function renderAll(){ renderTree(); renderProjects(); renderDetail(); }
@@ -1516,6 +1551,25 @@ document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
   st.tab = t.dataset.tab; renderDetail();
 });
 
+$("ovToggle").onclick = ()=>{
+  const f = findRepo(); if (!f) return;
+  const r = f.repo;
+  if (!r.ov) r.ov = { on:false, name:"", email:"" };
+  r.ov.on = !r.ov.on;
+  renderDetail();
+  flash(r.ov.on ? "已开启项目覆盖" : "已关闭项目覆盖，回到身份默认值");
+};
+$("ovName").addEventListener("input", (e)=>{
+  const f = findRepo(); if (!f) return;
+  if (!f.repo.ov) f.repo.ov = { on:true, name:"", email:"" };
+  f.repo.ov.name = e.target.value;
+});
+$("ovEmail").addEventListener("input", (e)=>{
+  const f = findRepo(); if (!f) return;
+  if (!f.repo.ov) f.repo.ov = { on:true, name:"", email:"" };
+  f.repo.ov.email = e.target.value;
+});
+
 $("authSeg").onclick = (e)=>{
   if (!e.target.dataset.auth) return;
   const f = findRepo(); f.acct.auth = e.target.dataset.auth;
@@ -1541,7 +1595,14 @@ document.querySelectorAll("[data-act]").forEach(el=>el.onclick=()=>{
     log:["git log --oneline --graph -10",commitsOf(f.repo.id).slice(0,10).map(c=>`* ${c.h} ${c.msg}`).join("\n")],
     pr:["gh pr list --state open",`共 ${(PRS[f.repo.id]||[]).filter(x=>x.state!=="merged").length} 个待合并 PR`],
     test:[`ssh -T git@${findPlat(f.plat.id).host}`,"认证通过 · 连接正常"],
-    apply:[`git config --local user.name "${f.acct.name}"\ngit config --local user.email "${f.acct.email}"`,`已写入 ${f.repo.path}/.git/config`],
+    apply:(()=>{
+      const rr = f.repo, aa = findAcct(st.plat, rr.accountId), ov = rr.ov;
+      const nn = (ov && ov.on && ov.name.trim()) ? ov.name.trim() : aa.name;
+      const mm = (ov && ov.on && ov.email.trim()) ? ov.email.trim() : aa.email;
+      return [`git config --local user.name "${nn}"
+git config --local user.email "${mm}"`,
+              `已写入 ${rr.path}/.git/config${ov && ov.on ? "（含项目覆盖）" : ""}`];
+    })(),
   };
   const [cmd,out] = map[act] || ["git status","ok"];
   termCmd(cmd.split("\n")[0]);
