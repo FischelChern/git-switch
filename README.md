@@ -4,7 +4,10 @@
 
 ## 状态
 
-**当前阶段：原型确认中，Rust 实现未开始。**
+**当前阶段：Rust 骨架可运行。**
+
+已完成：数据模型、配置持久化、钥匙串封装、git 本地配置读写（含回滚）、三栏界面与项目级覆盖。
+未完成：git 树、文件浏览、编辑器、diff、PR、克隆与扫描（见 `docs/backlog.md`）。
 
 - HTML 原型：[`demo/index.html`](demo/index.html)（浏览器直接打开即可）
 - 项目约定与架构：[`AGENTS.md`](AGENTS.md)
@@ -48,7 +51,7 @@
 ## 构建（待 Rust 实现落地）
 
 ```bash
-cargo run                 # 开发运行
+cargo run                 # 启动界面（首次运行使用内置预设平台）
 cargo test                # 单元 + 集成测试
 cargo build --release     # 产出单二进制
 ```
