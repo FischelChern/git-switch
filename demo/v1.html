@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>GitSwitch 原型</title>
+<style>
+  :root {
+    --bg: #14161a;
+    --panel: #1b1e24;
+    --panel-2: #21252d;
+    --line: #2b3038;
+    --text: #e6e8ec;
+    --muted: #8b93a1;
+    --dim: #656d7b;
+    --accent: #5b9dff;
+    --accent-soft: rgba(91, 157, 255, .14);
+    --ok: #46c88b;
+    --warn: #e0a33e;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: radial-gradient(1200px 600px at 20% -10%, #1d222b 0%, var(--bg) 55%);
+    color: var(--text);
+    font: 13px/1.5 -apple-system, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .win {
+    height: 100vh; display: grid;
+    grid-template-rows: 48px 1fr;
+    grid-template-columns: 288px 1fr;
+  }
+
+  /* ---------- 顶栏 ---------- */
+  header {
+    grid-column: 1 / -1;
+    display: flex; align-items: center; gap: 14px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, #1a1e25, #171a20);
+  }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 600; letter-spacing: .2px; }
+  .logo {
+    width: 22px; height: 22px; border-radius: 7px;
+    background: linear-gradient(140deg, var(--accent), #7d6bff);
+    display: grid; place-items: center;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 6px 16px -6px var(--accent);
+  }
+  .logo svg { width: 13px; height: 13px; }
+  .search {
+    flex: 1; max-width: 340px; position: relative;
+  }
+  .search input {
+    width: 100%; height: 30px; padding: 0 10px 0 30px;
+    background: #12151a; border: 1px solid var(--line); border-radius: 8px;
+    color: var(--text); font-size: 12.5px; outline: none;
+  }
+  .search input:focus { border-color: #3d6ea8; box-shadow: 0 0 0 3px var(--accent-soft); }
+  .search svg { position: absolute; left: 9px; top: 8px; width: 14px; height: 14px; opacity: .45; }
+  .top-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .btn {
+    height: 30px; padding: 0 12px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+    font-size: 12.5px; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn:hover { background: #272c35; }
+  .btn.primary {
+    background: linear-gradient(180deg, #3f81e8, #2f6dd0); border-color: #2b62bd;
+    box-shadow: 0 6px 18px -8px #3f81e8;
+  }
+  .btn.primary:hover { filter: brightness(1.08); }
+
+  /* ---------- 侧栏 ---------- */
+  aside {
+    border-right: 1px solid var(--line);
+    background: linear-gradient(180deg, #171a20, #15181d);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .side-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px 8px; font-size: 11px; letter-spacing: .8px;
+    color: var(--dim); text-transform: uppercase;
+  }
+  .repo-list { overflow: auto; padding: 0 8px 10px; }
+  .repo {
+    padding: 9px 10px; border-radius: 9px; cursor: pointer;
+    display: grid; grid-template-columns: 20px 1fr auto; gap: 9px; align-items: center;
+    border: 1px solid transparent;
+  }
+  .repo:hover { background: #1e232a; }
+  .repo.active { background: var(--accent-soft); border-color: #31587f; }
+  .dot { width: 18px; height: 18px; border-radius: 5px; display: grid; place-items: center; font-size: 10px; font-weight: 700; }
+  .dot.gh { background: #23272e; color: #fff; }
+  .dot.gl { background: #fc6d26; color: #fff; }
+  .dot.gitee { background: #c71d23; color: #fff; }
+  .repo-name { font-size: 13px; }
+  .repo-sub { font-size: 11px; color: var(--dim); margin-top: 1px; }
+  .avatar {
+    width: 22px; height: 22px; border-radius: 50%;
+    display: grid; place-items: center; font-size: 10.5px; font-weight: 600;
+    background: #2c3f5c; color: #b9d2f5; border: 1px solid #3b5d86;
+  }
+  .avatar.warn { background: #4a3a1c; color: #ecc27c; border-color: #6b5526; }
+  .side-foot { border-top: 1px solid var(--line); padding: 10px; }
+  .ghost {
+    width: 100%; height: 32px; border-radius: 8px; cursor: pointer;
+    background: transparent; border: 1px dashed #333a45; color: var(--muted); font-size: 12.5px;
+  }
+  .ghost:hover { border-color: #4a5464; color: var(--text); }
+
+  /* ---------- 主区 ---------- */
+  main { padding: 20px 24px; overflow: auto; display: flex; flex-direction: column; gap: 16px; }
+  .card {
+    background: linear-gradient(180deg, #1c2027, #191d23);
+    border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 16px 18px;
+    box-shadow: 0 24px 40px -32px #000;
+  }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .title { font-size: 15px; font-weight: 600; }
+  .tag {
+    font-size: 11px; padding: 2px 7px; border-radius: 20px;
+    background: #23282f; color: var(--muted); border: 1px solid var(--line);
+  }
+  .tag.blue { background: var(--accent-soft); color: #9dc4ff; border-color: #31587f; }
+  .mono { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 11.5px; color: var(--muted); }
+  .label { font-size: 11px; color: var(--dim); letter-spacing: .5px; text-transform: uppercase; margin-bottom: 6px; }
+  .grid { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(260px, 1.6fr); gap: 18px 28px; margin-top: 16px; }
+  .grid.two { grid-template-columns: minmax(200px, 1fr) minmax(240px, 1fr); }
+  .field { display: flex; flex-direction: column; min-width: 0; }
+
+  /* 原生感输入 / 下拉 */
+  .input, .select-trigger {
+    height: 32px; width: 100%; padding: 0 10px; border-radius: 8px;
+    background: #12151a; border: 1px solid var(--line); color: var(--text);
+    font-size: 12.5px; display: flex; align-items: center; gap: 8px;
+  }
+  .select-trigger { cursor: pointer; justify-content: space-between; }
+  .select-trigger:hover { border-color: #3a4250; }
+  .select-trigger.open { border-color: #3d6ea8; box-shadow: 0 0 0 3px var(--accent-soft); }
+  .select-trigger .val { display: flex; align-items: center; gap: 8px; }
+  .caret { width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #7b8496; transition: transform .15s ease; }
+  .open .caret { transform: rotate(180deg); }
+  .combo { position: relative; }
+  .menu {
+    position: absolute; z-index: 20; left: 0; right: 0; top: 38px;
+    background: #202530; border: 1px solid #333a48; border-radius: 9px; padding: 5px;
+    box-shadow: 0 18px 40px -12px #000, 0 0 0 1px rgba(255,255,255,.03);
+    display: none;
+  }
+  .menu.show { display: block; animation: pop .12s ease-out; }
+  @keyframes pop { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+  .opt {
+    display: grid; grid-template-columns: 22px 1fr auto; gap: 9px; align-items: center;
+    padding: 7px 8px; border-radius: 7px; cursor: pointer;
+  }
+  .opt:hover { background: #2a3040; }
+  .opt.sel { background: var(--accent-soft); }
+  .opt .meta { font-size: 10.5px; color: var(--dim); }
+  .menu-head { font-size: 10.5px; color: var(--dim); padding: 4px 8px 6px; letter-spacing: .4px; }
+
+  /* 认证方式分段 */
+  .seg { display: inline-flex; background: #12151a; border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
+  .seg button {
+    height: 26px; padding: 0 12px; border: 0; border-radius: 6px; cursor: pointer;
+    background: transparent; color: var(--muted); font-size: 12px;
+  }
+  .seg button.on { background: #2a3140; color: #dfe7f5; box-shadow: inset 0 0 0 1px #3a4453; }
+  .hint { font-size: 11px; color: var(--dim); margin-top: 6px; }
+
+  /* 覆盖开关 */
+  .switch { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .track { width: 32px; height: 18px; border-radius: 20px; background: #2b3038; position: relative; transition: .15s; }
+  .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #8b93a1; transition: .15s; }
+  .switch.on .track { background: #2f6dd0; }
+  .switch.on .track::after { left: 16px; background: #fff; }
+  .switch span { font-size: 12px; color: var(--muted); }
+
+  .divider { height: 1px; background: var(--line); margin: 16px 0 0; }
+  .foot-row { display: flex; align-items: center; gap: 10px; padding-top: 14px; }
+  .grow { flex: 1; }
+  .status { font-size: 12px; color: var(--ok); display: flex; align-items: center; gap: 6px; opacity: 0; transition: opacity .2s; }
+  .status.show { opacity: 1; }
+  .warnbox {
+    display: flex; gap: 10px; align-items: flex-start;
+    background: rgba(224, 163, 62, .08); border: 1px solid rgba(224, 163, 62, .28);
+    color: #e8c68b; border-radius: 8px; padding: 9px 11px; font-size: 12px;
+  }
+  .warnbox svg { width: 14px; height: 14px; flex: none; margin-top: 2px; }
+  .kbd { font-family: ui-monospace, monospace; background: #23282f; border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; font-size: 11px; }
+  .empty-menu { padding: 10px 8px; font-size: 12px; color: var(--dim); }
+</style>
+</head>
+<body>
+<div class="win">
+  <header>
+    <div class="brand">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round">
+          <circle cx="6" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="12" r="2.4"/>
+          <path d="M6 8.4v7.2M8.4 6h5.5a4 4 0 0 0 4 4"/>
+        </svg>
+      </div>
+      GitSwitch
+    </div>
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg>
+      <input placeholder="搜索仓库或路径…" />
+    </div>
+    <div class="top-right">
+      <button class="btn">扫描目录…</button>
+      <button class="btn">读取 git 远程</button>
+    </div>
+  </header>
+
+  <aside>
+    <div class="side-head"><span>仓库 · 4</span><span id="hintcount"></span></div>
+    <div class="repo-list" id="repos"></div>
+    <div class="side-foot"><button class="ghost">+ 添加仓库</button></div>
+  </aside>
+
+  <main>
+    <div class="card">
+      <div class="row">
+        <div class="title" id="curName">iot-gateway</div>
+        <span class="tag blue" id="curPlatform">GitHub</span>
+        <span class="tag" id="curProto">SSH</span>
+        <div class="grow"></div>
+        <span class="mono" id="curPath">~/WorkSpace/iot-gateway</span>
+      </div>
+      <div class="mono" style="margin-top:6px" id="curUrl">git@github.com:zhangxinyu/iot-gateway.git</div>
+
+      <div class="grid two">
+        <div class="field">
+          <div class="label">平台</div>
+          <div class="combo">
+            <div class="input select-trigger" data-menu="platformMenu">
+              <span class="val"><span class="dot gh" style="width:16px;height:16px" id="platDot">G</span><span id="platName">GitHub</span></span>
+              <i class="caret"></i>
+            </div>
+            <div class="menu" id="platformMenu"></div>
+          </div>
+          <div class="hint">决定下拉里可选哪些账号</div>
+        </div>
+
+        <div class="field">
+          <div class="label">账号 · 该平台下可供选择的身份</div>
+          <div class="combo">
+            <div class="input select-trigger" data-menu="acctMenu">
+              <span class="val"><span class="avatar" id="acctAv">张</span><span id="acctName">张鑫宇 · 个人</span></span>
+              <i class="caret"></i>
+            </div>
+            <div class="menu" id="acctMenu"></div>
+          </div>
+          <div class="hint" id="acctHint">切换后写入该仓库 <span class="kbd">.git/config</span>，不影响其他仓库</div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="grid two" style="margin-top:16px">
+        <div class="field">
+          <div class="label">认证方式</div>
+          <div class="seg" id="authSeg">
+            <button class="on" data-auth="ssh">SSH 密钥</button>
+            <button data-auth="token">令牌</button>
+          </div>
+          <div class="hint" id="authHint">使用钥匙串中保存的 SSH 密钥</div>
+        </div>
+        <div class="field">
+          <div class="label">仓库级覆盖</div>
+          <div class="row" style="gap:16px; flex-wrap:wrap">
+            <div class="switch" id="ovName"><span class="track"></span><span>单独姓名</span></div>
+            <div class="switch" id="ovEmail"><span class="track"></span><span>单独邮箱</span></div>
+          </div>
+          <div class="field" id="ovFields" style="margin-top:10px; display:none; gap:8px">
+            <input class="input" id="inName" placeholder="仓库专用 user.name" />
+            <input class="input" id="inEmail" placeholder="仓库专用 user.email" />
+          </div>
+          <div class="hint" id="ovHint">关闭时继承账号默认值</div>
+        </div>
+      </div>
+
+      <div class="warnbox" style="margin-top:14px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 2.5 20h19L12 3z"/><path d="M12 9v5"/></svg>
+        <div>该仓库当前 <b>global</b> 身份为 <span class="mono">张鑫宇 / 429092941@qq.com</span>，与所选账号一致，无需写入。</div>
+      </div>
+
+      <div class="foot-row">
+        <div class="status" id="toast">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" width="14" height="14"><path d="M4 12.5 9 17.5 20 6.5"/></svg>
+          <span id="toastText">已应用</span>
+        </div>
+        <div class="grow"></div>
+        <button class="btn" id="testBtn">测试认证</button>
+        <button class="btn primary" id="applyBtn">应用到此仓库</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+const platforms = [
+  { id: "github",  name: "GitHub",  letter: "G", cls: "gh",    host: "github.com" },
+  { id: "gitlab",  name: "GitLab",  letter: "L", cls: "gl",    host: "gitlab.com" },
+  { id: "corp",    name: "公司 GitLab", letter: "C", cls: "gl", host: "gitlab.company.com" },
+  { id: "gitee",   name: "Gitee",   letter: "E", cls: "gitee", host: "gitee.com" },
+];
+
+const accounts = [
+  { id: "a1", platform: "github", label: "张鑫宇 · 个人", short: "张", name: "张鑫宇", email: "429092941@qq.com", auth: "ssh",   key: "~/.ssh/id_ed25519_github" },
+  { id: "a2", platform: "github", label: "zx-pro · 小号", short: "Z", name: "zx-pro",  email: "zx.pro@gmail.com",  auth: "token" },
+  { id: "a3", platform: "gitlab", label: "张鑫宇 · 公司", short: "张", name: "张鑫宇", email: "zhangxinyu@company.com", auth: "ssh",   key: "~/.ssh/id_ed25519_corp" },
+  { id: "a4", platform: "gitee",  label: "3237138707",   short: "3", name: "3237138707", email: "3237138707@qq.com", auth: "token" },
+];
+
+let repos = [
+  { id: "r1", name: "iot-gateway",   path: "~/WorkSpace/iot-gateway",   url: "git@github.com:zhangxinyu/iot-gateway.git",        platform: "github", account: "a1", ovName: false, ovEmail: false },
+  { id: "r2", name: "ruoyi-plus",    path: "~/WorkSpace/ruoyi-plus",    url: "git@github.com:zx-pro/ruoyi-plus.git",             platform: "github", account: "a2", ovName: false, ovEmail: false },
+  { id: "r3", name: "erp-backend",   path: "~/WorkSpace/erp-backend",   url: "ssh://git@gitlab.company.com/erp/backend.git",     platform: "corp",   account: null, ovName: true,  ovEmail: true,  name: "张鑫宇", email: "zhangxinyu@company.com" },
+  { id: "r4", name: "mqtt-bridge",   path: "~/WorkSpace/mqtt-bridge",   url: "https://gitee.com/3237138707/mqtt-bridge.git",     platform: "gitee",  account: "a4", ovName: false, ovEmail: false },
+];
+let cur = "r1";
+let openMenu = null;
+
+const $ = (id) => document.getElementById(id);
+const plat = (id) => platforms.find(p => p.id === id);
+const acct = (id) => accounts.find(a => a.id === id);
+const acctsOf = (pid) => accounts.filter(a => a.platform === pid);
+
+function renderRepos() {
+  $("repos").innerHTML = repos.map(r => {
+    const p = plat(r.platform), a = acct(r.account);
+    const badge = a
+      ? `<div class="avatar" title="${a.name} <${a.email}>">${a.short}</div>`
+      : `<div class="avatar warn" title="未绑定账号">?</div>`;
+    return `<div class="repo ${r.id === cur ? "active" : ""}" data-id="${r.id}">
+      <div class="dot ${p.cls}">${p.letter}</div>
+      <div><div class="repo-name">${r.name}</div>
+      <div class="repo-sub">${p.name}${a ? " · " + a.name : " · 未绑定"}</div></div>
+      ${badge}</div>`;
+  }).join("");
+  $("hintcount").textContent = repos.filter(r => !r.account).length + " 未绑定";
+  document.querySelectorAll(".repo").forEach(el => el.onclick = () => { cur = el.dataset.id; renderAll(); });
+}
+
+function renderDetail() {
+  const r = repos.find(x => x.id === cur), p = plat(r.platform), a = acct(r.account);
+  $("curName").textContent = r.name;
+  $("curPath").textContent = r.path;
+  $("curUrl").textContent = r.url;
+  $("curPlatform").textContent = p.name;
+  $("curProto").textContent = r.url.startsWith("git@") || r.url.startsWith("ssh://") ? "SSH" : "HTTPS";
+
+  $("platDot").textContent = p.letter;
+  $("platDot").className = "dot " + p.cls;
+  $("platName").textContent = p.name;
+
+  if (a) {
+    $("acctAv").textContent = a.short;
+    $("acctAv").className = "avatar";
+    $("acctName").textContent = a.label;
+  } else {
+    $("acctAv").textContent = "?";
+    $("acctAv").className = "avatar warn";
+    $("acctName").textContent = "未绑定账号 — 请选择";
+  }
+
+  const auth = a ? a.auth : "ssh";
+  document.querySelectorAll("#authSeg button").forEach(b => b.classList.toggle("on", b.dataset.auth === auth));
+  $("authHint").textContent = auth === "ssh"
+    ? "密钥：" + (a?.key || "未配置") + " · 通过 core.sshCommand 注入"
+    : "令牌存于系统钥匙串，经 credential 注入，不回显";
+
+  $("ovName").classList.toggle("on", r.ovName);
+  $("ovEmail").classList.toggle("on", r.ovEmail);
+  const show = r.ovName || r.ovEmail;
+  $("ovFields").style.display = show ? "flex" : "none";
+  $("inName").value = r.ovName ? (r.name_ || "") : (a?.name || "");
+  $("inEmail").value = r.ovEmail ? (r.email || "") : (a?.email || "");
+  $("inName").placeholder = a ? a.name : "仓库专用 user.name";
+  $("inEmail").placeholder = a ? a.email : "仓库专用 user.email";
+  $("ovHint").textContent = show ? "写入该仓库 .git/config，优先于账号默认值" : "关闭时继承账号默认值";
+
+  // 下拉内容
+  $("platformMenu").innerHTML = `<div class="menu-head">平台 · ${platforms.length}</div>` +
+    platforms.map(pp => `<div class="opt ${pp.id === r.platform ? "sel" : ""}" data-p="${pp.id}">
+      <span class="dot ${pp.cls}" style="width:18px;height:18px">${pp.letter}</span>
+      <span>${pp.name}<div class="meta">${pp.host}</div></span>
+      <span class="meta">${acctsOf(pp.id).length} 账号</span></div>`).join("");
+
+  const list = acctsOf(r.platform);
+  $("acctMenu").innerHTML = `<div class="menu-head">${p.name} 下的账号 · ${list.length}</div>` +
+    (list.length ? list.map(aa => `<div class="opt ${aa.id === r.account ? "sel" : ""}" data-a="${aa.id}">
+      <span class="avatar">${aa.short}</span>
+      <span>${aa.label}<div class="meta">${aa.email}</div></span>
+      <span class="meta">${aa.auth === "ssh" ? "SSH" : "令牌"}</span></div>`).join("")
+    : `<div class="empty-menu">该平台暂无账号，去「账号管理」添加</div>`) +
+    `<div class="menu-head" style="border-top:1px solid #2b3038;margin-top:4px;padding-top:6px">+ 新增 ${p.name} 账号…</div>`;
+
+  document.querySelectorAll("#platformMenu .opt").forEach(el => el.onclick = () => {
+    r.platform = el.dataset.p;
+    if (!acctsOf(r.platform).some(a2 => a2.id === r.account)) r.account = null;
+    closeMenus(); renderAll();
+  });
+  document.querySelectorAll("#acctMenu .opt").forEach(el => el.onclick = () => {
+    r.account = el.dataset.a;
+    const aa = acct(r.account);
+    r.platform = aa.platform;
+    closeMenus(); renderAll(); flash("已切换账号：" + aa.name);
+  });
+}
+
+function renderAll() { renderRepos(); renderDetail(); }
+
+function closeMenus() {
+  document.querySelectorAll(".menu").forEach(m => m.classList.remove("show"));
+  document.querySelectorAll(".select-trigger").forEach(t => t.classList.remove("open"));
+  openMenu = null;
+}
+
+document.querySelectorAll(".select-trigger").forEach(t => {
+  t.onclick = (e) => {
+    e.stopPropagation();
+    const id = t.dataset.menu, menu = $(id);
+    const wasOpen = menu.classList.contains("show");
+    closeMenus();
+    if (!wasOpen) { menu.classList.add("show"); t.classList.add("open"); openMenu = id; }
+  };
+});
+document.body.onclick = () => closeMenus();
+
+$("authSeg").onclick = (e) => {
+  if (e.target.dataset.auth) {
+    const r = repos.find(x => x.id === cur), a = acct(r.account);
+    if (a) a.auth = e.target.dataset.auth;
+    renderDetail();
+    flash("认证方式：" + (a?.auth === "token" ? "令牌" : "SSH 密钥"));
+  }
+};
+$("ovName").onclick = () => { const r = repos.find(x => x.id === cur); r.ovName = !r.ovName; renderDetail(); };
+$("ovEmail").onclick = () => { const r = repos.find(x => x.id === cur); r.ovEmail = !r.ovEmail; renderDetail(); };
+$("applyBtn").onclick = () => {
+  const r = repos.find(x => x.id === cur), a = acct(r.account);
+  if (!a) return flash("请先选择账号", true);
+  r.name_ = $("inName").value; r.email = $("inEmail").value;
+  flash("已写入 " + r.path + "/.git/config");
+};
+$("testBtn").onclick = () => flash("认证可用 · git@github.com: 已通过", false);
+
+let toastTimer;
+function flash(msg, bad = false) {
+  const t = $("toast");
+  $("toastText").textContent = msg;
+  t.style.color = bad ? "#e8a1a1" : "#46c88b";
+  t.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), 2600);
+}
+
+renderAll();
+</script>
+</body>
+</html>

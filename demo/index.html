@@ -1,0 +1,1810 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>GitSwitch 原型 v4</title>
+<style>
+  :root{
+    --bg:#14161a; --cell:#1b1e24; --cell2:#21252d; --line:#2b3038;
+    --text:#e6e8ec; --muted:#8b93a1; --dim:#656d7b;
+    --accent:#5b9dff; --accent-soft:rgba(91,157,255,.14);
+    --ok:#46c88b; --warn:#e0a33e; --red:#ff5c74; --add:#3fbf7f; --del:#e8607a;
+    --code-font:"SF Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--text);overflow:hidden;
+    font:13px/1.5 -apple-system,"SF Pro Text","PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .win{height:100vh;display:grid;grid-template-rows:46px 1fr auto}
+
+  /* 顶栏 */
+  header{display:flex;align-items:center;gap:12px;padding:0 14px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#1a1e25,#171a20)}
+  .brand{display:flex;align-items:center;gap:8px;font-weight:600;font-size:13.5px;flex:none}
+  .logo{width:21px;height:21px;border-radius:7px;display:grid;place-items:center;background:linear-gradient(140deg,var(--accent),#7d6bff);box-shadow:0 0 0 1px rgba(255,255,255,.08),0 6px 16px -6px var(--accent)}
+  .logo svg{width:12px;height:12px}
+  .search{position:relative;width:240px;flex:none}
+  .search input{width:100%;height:28px;padding:0 9px 0 27px;border-radius:8px;background:#12151a;border:1px solid var(--line);color:var(--text);font-size:12.5px;outline:none}
+  .search input:focus{border-color:#3d6ea8;box-shadow:0 0 0 3px var(--accent-soft)}
+  .search svg{position:absolute;left:8px;top:8px;width:13px;height:13px;opacity:.45}
+  .spacer{flex:1}
+  .btn{height:28px;padding:0 11px;border-radius:8px;cursor:pointer;font-size:12.5px;white-space:nowrap;flex:none;
+    border:1px solid var(--line);background:var(--cell2);color:var(--text);display:inline-flex;align-items:center;gap:6px}
+  .btn:hover{background:#272c35}
+  .btn.primary{background:linear-gradient(180deg,#3f81e8,#2f6dd0);border-color:#2b62bd}
+  .btn.primary:hover{filter:brightness(1.08)}
+  .btn.sm{height:24px;padding:0 8px;font-size:11.5px;border-radius:6px}
+  .btn.wide{width:100%;justify-content:center;height:32px}
+  .btn.tiny{height:21px;padding:0 7px;font-size:11px;border-radius:5px}
+
+  /* 三栏 */
+  .cols{display:grid;grid-template-columns:256px 282px minmax(0,1fr);min-height:0}
+  .col{display:flex;flex-direction:column;min-height:0;min-width:0}
+  .platforms{border-right:1px solid var(--line);background:linear-gradient(180deg,#171a20,#15181d)}
+  .projects{border-right:1px solid var(--line);background:#16191f}
+  .col-head{height:34px;display:flex;align-items:center;gap:8px;padding:0 12px;font-size:10.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--dim);border-bottom:1px solid var(--line);flex:none}
+  .col-head .n{color:var(--muted);text-transform:none;letter-spacing:0;font-size:10.5px}
+  .col-foot{border-top:1px solid var(--line);padding:9px;flex:none;display:flex;gap:6px}
+  .ghost{flex:1;height:32px;border-radius:8px;cursor:pointer;font-size:12.5px;background:transparent;border:1px dashed #333a45;color:var(--muted)}
+  .ghost:hover{border-color:#4a5464;color:var(--text)}
+  .scroll{overflow:auto;flex:1;min-height:0;padding:6px 8px}
+
+  /* 平台树 */
+  .plat-row{display:grid;grid-template-columns:18px 1fr auto;gap:8px;align-items:center;padding:7px 8px;border-radius:8px;cursor:pointer;font-size:12.5px}
+  .plat-row:hover{background:#1e232a}
+  .plat-row.open{background:#1a1e25}
+  .caret-s{width:0;height:0;border-left:3.5px solid transparent;border-right:3.5px solid transparent;border-top:4.5px solid #7b8496;transition:transform .15s;flex:none}
+  .caret-s.open{transform:rotate(180deg)}
+  .badge{font-size:10.5px;color:var(--dim);white-space:nowrap}
+  .acct-row{display:grid;grid-template-columns:20px 1fr auto;gap:8px;align-items:center;padding:6px 8px 6px 14px;border-radius:8px;cursor:pointer;font-size:12.5px}
+  .acct-row:hover{background:#1e232a}
+  .acct-row.sel{background:var(--accent-soft);box-shadow:inset 0 0 0 1px #31587f}
+  .avatar{width:19px;height:19px;border-radius:50%;display:grid;place-items:center;font-size:9.5px;font-weight:600;background:#2c3f5c;color:#b9d2f5;border:1px solid #3b5d86;flex:none}
+  .acct-label{display:flex;flex-direction:column;min-width:0}
+  .acct-label small{font-size:10px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dot{width:18px;height:18px;border-radius:5px;display:grid;place-items:center;font-size:9.5px;font-weight:700;flex:none}
+  .dot.gh{background:#2c3138;color:#fff}
+  .dot.corp{background:#4a5f8a;color:#fff}
+  .dot.gitee{background:#c71d23;color:#fff}
+
+  /* 中栏 */
+  .plist{padding:8px;display:flex;flex-direction:column;gap:6px}
+  .pcard{border:1px solid var(--line);border-radius:9px;padding:9px 10px;cursor:pointer;background:linear-gradient(180deg,#1c2027,#1a1e24)}
+  .pcard:hover{border-color:#39414f}
+  .pcard.sel{border-color:#3d6ea8;box-shadow:0 0 0 2px var(--accent-soft)}
+  .pcard .pn{font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:6px}
+  .pcard .pu{font-size:10.5px;color:var(--dim);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pcard .pmeta{display:flex;gap:5px;margin-top:7px;flex-wrap:wrap;align-items:center}
+  .chip{font-size:10px;padding:1px 6px;border-radius:20px;background:#23282f;color:var(--muted);border:1px solid var(--line)}
+  .chip.blue{background:var(--accent-soft);color:#9dc4ff;border-color:#31587f}
+  .chip.ok{background:rgba(70,200,139,.1);color:#7fd7ac;border-color:rgba(70,200,139,.3)}
+  .chip.star{background:rgba(224,163,62,.1);color:#e8c68b;border-color:rgba(224,163,62,.28)}
+
+  /* 右栏 */
+  .detail{background:#191c22}
+  .dhead{padding:10px 16px 0;flex:none}
+  .dtitle{display:flex;align-items:center;gap:8px;min-width:0}
+  .dtitle h2{font-size:15px;margin:0;font-weight:600;white-space:nowrap}
+  .tag{font-size:10.5px;padding:1.5px 7px;border-radius:20px;background:#23282f;color:var(--muted);border:1px solid var(--line);white-space:nowrap}
+  .tag.blue{background:var(--accent-soft);color:#9dc4ff;border-color:#31587f}
+  .mono{font-family:var(--code-font);font-size:11px;color:var(--dim)}
+  .dpath{margin:4px 0 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .repometa{display:flex;align-items:center;gap:12px;margin:7px 0 0;font-size:11.5px;color:var(--muted)}
+  .repometa .m{display:inline-flex;align-items:center;gap:4px}
+  .repometa svg{width:12px;height:12px;opacity:.75}
+  .repometa b{color:#cdd6e3;font-weight:600}
+
+  .switcher{display:grid;grid-template-columns:1fr 1.4fr auto;gap:10px;align-items:end;padding:10px 16px 8px;flex:none}
+  .label{font-size:10px;color:var(--dim);letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px}
+  .combo{position:relative}
+  .sel-t{height:30px;width:100%;padding:0 9px;border-radius:8px;background:#12151a;border:1px solid var(--line);color:var(--text);font-size:12.5px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .sel-t.click{cursor:pointer}
+  .sel-t.click:hover{border-color:#3a4250}
+  .sel-t.open{border-color:#3d6ea8;box-shadow:0 0 0 3px var(--accent-soft)}
+  .sel-t.locked{background:#171a1f;color:var(--dim);border-style:dashed;cursor:not-allowed}
+  .sel-t.locked .lockic{width:11px;height:11px;opacity:.7;flex:none}
+  .caret{width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid #7b8496;transition:transform .15s;flex:none}
+  .sel-t.open .caret{transform:rotate(180deg)}
+  .menu{position:absolute;z-index:40;left:0;right:0;top:35px;display:none;background:#202530;border:1px solid #333a48;border-radius:9px;padding:5px;box-shadow:0 18px 40px -12px #000}
+  .menu.show{display:block;animation:pop .12s ease-out}
+  @keyframes pop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+  .opt{display:grid;grid-template-columns:20px 1fr auto;gap:8px;align-items:center;padding:6px 8px;border-radius:7px;cursor:pointer;font-size:12.5px}
+  .opt:hover{background:#2a3040}
+  .opt.sel{background:var(--accent-soft)}
+  .opt .meta{font-size:10px;color:var(--dim)}
+  .menu-head{font-size:10px;color:var(--dim);padding:3px 8px 5px}
+  .seg{display:inline-flex;background:#12151a;border:1px solid var(--line);border-radius:8px;padding:2px}
+  .seg button{height:24px;padding:0 10px;border:0;border-radius:6px;cursor:pointer;background:transparent;color:var(--muted);font-size:11.5px;white-space:nowrap}
+  .seg button.on{background:#2a3140;color:#dfe7f5;box-shadow:inset 0 0 0 1px #3a4453}
+
+  /* git 操作栏 */
+  .gitbar{display:flex;align-items:center;gap:5px;padding:0 16px 8px;flex:none;flex-wrap:wrap}
+  .gitbar .sep{width:1px;height:18px;background:var(--line);margin:0 3px}
+  .gitbar .branch{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px;border-radius:6px;background:#12151a;border:1px solid var(--line);font-size:11.5px;color:#cfe0ff;cursor:pointer}
+  .gitbar .branch svg{width:11px;height:11px;opacity:.7}
+
+  /* tabs */
+  .tabs{display:flex;gap:2px;padding:0 16px;border-bottom:1px solid var(--line);flex:none}
+  .tab{padding:8px 12px;font-size:12.5px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+  .tab:hover{color:var(--text)}
+  .tab.on{color:#cfe0ff;border-bottom-color:var(--accent)}
+  .tab .cnt{font-size:10px;padding:0 5px;border-radius:20px;background:#2b3038;color:var(--muted);margin-left:5px}
+
+  .pane{overflow:auto;flex:1;min-height:0;padding:14px 16px 16px}
+  .pane.flush{padding:0;overflow:hidden;display:flex}
+
+  /* README */
+  .readme h3{font-size:13px;margin:16px 0 6px;color:#dbe4f3}
+  .readme h3:first-child{margin-top:0}
+  .readme p{margin:6px 0;color:#b9c1cf;font-size:12.5px;line-height:1.75}
+  .readme code{font-family:var(--code-font);font-size:11.5px;background:#23282f;border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:#cbd6e6}
+  .readme pre{background:#12151a;border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-family:var(--code-font);font-size:11.5px;color:#a9b6c9;overflow:auto;margin:8px 0}
+  .readme ul{margin:6px 0;padding-left:18px;color:#b9c1cf;font-size:12.5px}
+  .readme li{margin:3px 0}
+
+  /* ===== git 树 ===== */
+  .gitview{display:flex;flex-direction:column;gap:10px}
+  .branchbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:0 0 10px;border-bottom:1px solid var(--line)}
+  .bgroup{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+  .bgroup .glabel{font-size:10px;color:var(--dim);letter-spacing:.5px;text-transform:uppercase;margin-right:2px}
+  .bchip{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:6px;font-size:11.5px;cursor:pointer;
+    background:#1d222a;border:1px solid var(--line);color:#c3ccda}
+  .bchip:hover{border-color:#3d6ea8}
+  .bchip.cur{background:var(--accent-soft);border-color:#31587f;color:#cfe0ff}
+  .bchip .bic{width:9px;height:9px;opacity:.7}
+  .bchip .lane-dot{width:6px;height:6px;border-radius:50%;flex:none}
+
+  .graphwrap{position:relative;overflow:auto;flex:1;min-height:0}
+  .grow{display:grid;grid-template-columns:var(--graph-w,60px) 70px 1fr 92px;gap:9px;align-items:center;
+    height:38px;cursor:pointer;border-radius:6px;padding-right:8px}
+  .grow:hover{background:#1e232a}
+  .grow.sel{background:#233043}
+  .gsvg{position:relative}
+  .gsvg svg{display:block}
+  .ghash{font-family:var(--code-font);font-size:10.5px;color:#7f8ea3}
+  .gmsg{font-size:12.5px;color:#dbe1ea;display:flex;flex-direction:column;gap:2px;min-width:0;overflow:hidden}
+  .gmsg .txt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .grefs{display:flex;gap:5px;overflow:hidden;flex-wrap:nowrap}
+  .ref{font-size:9.5px;padding:0 5px;border-radius:4px;border:1px solid;white-space:nowrap;flex:none;font-family:var(--code-font)}
+  .ref.head{color:#7fd7ac;background:rgba(70,200,139,.12);border-color:rgba(70,200,139,.35)}
+  .ref.local{color:#9dc4ff;background:var(--accent-soft);border-color:#31587f}
+  .ref.remote{color:#c3a7ff;background:rgba(157,139,255,.12);border-color:rgba(157,139,255,.35)}
+  .ref.tag{color:#e8c68b;background:rgba(224,163,62,.1);border-color:rgba(224,163,62,.3)}
+  .gmeta{font-size:10.5px;color:var(--dim);white-space:nowrap;display:flex;gap:8px;align-items:center}
+
+  /* 本地文件 */
+  .fview{display:grid;grid-template-columns:214px minmax(0,1fr);flex:1;min-height:0}
+  .ftree{border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;background:#171a20}
+  .ftree-head{padding:7px 10px;font-size:10.5px;color:var(--dim);letter-spacing:.6px;text-transform:uppercase;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:6px}
+  .ftree-body{overflow:auto;flex:1;min-height:0;padding:5px 6px}
+  .frow{display:grid;grid-template-columns:13px 1fr auto;gap:6px;align-items:center;padding:4px 6px 4px calc(6px + var(--ind,0px));border-radius:6px;cursor:pointer;font-size:12px;color:#c3ccda}
+  .frow:hover{background:#1f242b}
+  .frow.sel{background:#233043;color:#dbe9ff}
+  .frow .fic{width:12px;height:12px;opacity:.5;flex:none}
+  .frow.dir{color:#9dc4ff}
+  .frow .fname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .st{font-size:9.5px;font-weight:700;width:13px;text-align:center;border-radius:3px;font-family:ui-monospace,monospace}
+  .st.M{color:#e0a33e}
+  .st.A{color:#46c88b}
+  .st.D{color:#e8607a}
+  .st.R{color:#9d8bff}
+  .st.U{color:#5b9dff}
+
+  .fmain{display:flex;flex-direction:column;min-width:0;min-height:0}
+  .fbar{display:flex;align-items:center;gap:6px;padding:5px 10px;border-bottom:1px solid var(--line);flex:none;flex-wrap:wrap;min-height:35px}
+  .fbar .fpath{font-size:12px;color:#cdd6e3;font-family:var(--code-font);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:70px}
+  .stat-add{color:var(--add);font-family:var(--code-font);font-size:11px}
+  .stat-del{color:var(--del);font-family:var(--code-font);font-size:11px}
+  .savebadge{font-size:10.5px;color:var(--dim);display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+  .savebadge.on{color:var(--ok)}
+  .savebadge .dt{width:5px;height:5px;border-radius:50%;background:currentColor}
+  .usagebadge{font-size:10.5px;color:#9dc4ff;background:var(--accent-soft);border:1px solid #31587f;border-radius:20px;padding:1px 7px;white-space:nowrap}
+  .errbadge{font-size:10.5px;color:#ff9aab;background:rgba(255,92,116,.14);border:1px solid rgba(255,92,116,.4);border-radius:20px;padding:1px 7px;white-space:nowrap;cursor:pointer}
+
+  /* 编辑器 */
+  .editor{display:grid;grid-template-columns:var(--gut-w,154px) minmax(0,1fr);flex:1;min-height:0;position:relative}
+  .egutter{overflow:hidden;border-right:1px solid #23282f;background:#16191e;position:relative}
+  .egutter-in{position:absolute;top:0;left:0;right:0;padding:6px 0;will-change:transform}
+  .erow{display:grid;grid-template-columns:1fr 34px 12px;align-items:center;height:20px;line-height:20px;font-family:var(--code-font);font-size:11px;white-space:nowrap}
+  .erow .blame{color:#5d6675;font-size:10px;padding-left:8px;overflow:hidden;text-overflow:ellipsis}
+  .erow .ln{color:#4d5563;text-align:right;padding-right:6px;user-select:none}
+  .erow .emark{color:var(--red);font-size:9px;text-align:center;visibility:hidden}
+  .erow.err .emark{visibility:visible}
+  .erow.err .ln{color:var(--red)}
+
+  .elayers{position:relative;overflow:hidden;min-width:0}
+  .ehl{position:absolute;top:0;left:0;margin:0;padding:6px 0;pointer-events:none;will-change:transform;
+    font-family:var(--code-font);font-size:11.5px;line-height:20px;white-space:pre;color:#c9d4e4}
+  .ehl .pl{display:block;height:20px;line-height:20px;padding:0 14px 0 10px;white-space:pre}
+  .ehl .pl.errline{background:rgba(255,92,116,.09);box-shadow:inset 2px 0 0 var(--red)}
+  .ehl .kw{color:#c792ea}
+  .ehl .str{color:#a8d08d}
+  .ehl .cm{color:#5c6674;font-style:italic}
+  .ehl .num{color:#e0a33e}
+  .ehl .ann{color:#7fb2ff}
+  .ehl mark.use{background:rgba(91,157,255,.24);border-radius:2px;color:inherit}
+  .ecode{position:absolute;inset:0;width:100%;height:100%;border:0;outline:none;resize:none;background:transparent;
+    color:transparent;caret-color:#cfe0ff;padding:6px 14px 6px 10px;
+    font-family:var(--code-font);font-size:11.5px;line-height:20px;white-space:pre;overflow:auto;tab-size:4}
+  .ecode::selection{background:rgba(91,157,255,.3);color:transparent}
+
+  /* diff */
+  .dwrap{overflow:auto;flex:1;min-height:0;font-family:var(--code-font);font-size:11.5px;line-height:20px}
+  .dside{display:grid;grid-template-columns:1fr 1fr}
+  .dhalf{border-right:1px solid var(--line);min-width:0}
+  .dhalf:last-child{border-right:0}
+  .dhalf-head{position:sticky;top:0;background:#1d222a;border-bottom:1px solid var(--line);padding:4px 10px;font-size:10.5px;color:var(--muted);z-index:2}
+  .dline{display:grid;grid-template-columns:44px 1fr;white-space:pre}
+  .dline .dl{color:#4d5563;text-align:right;padding-right:8px;user-select:none}
+  .dline .dt{padding-right:12px;color:#c9d4e4}
+  .dline.add{background:rgba(63,191,127,.1)}
+  .dline.add .dt{color:#a8e6c4}
+  .dline.del{background:rgba(232,96,122,.1)}
+  .dline.del .dt{color:#f0b3c0}
+
+  /* PR */
+  .pr{border:1px solid var(--line);border-radius:9px;padding:9px 11px;margin-bottom:7px;background:linear-gradient(180deg,#1c2027,#1a1e24)}
+  .pr .prt{display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600}
+  .pr .prn{font-family:ui-monospace,monospace;font-size:10.5px;color:#7f8ea3}
+  .pr .prs{font-size:11.5px;color:var(--dim);margin-top:4px}
+  .pr .pra{display:flex;gap:6px;margin-top:8px;align-items:center}
+  .prstate{font-size:10px;padding:1px 6px;border-radius:20px;border:1px solid}
+  .prstate.open{color:#7fd7ac;border-color:rgba(70,200,139,.35);background:rgba(70,200,139,.1)}
+  .prstate.merged{color:#c3a7ff;border-color:rgba(157,139,255,.35);background:rgba(157,139,255,.12)}
+  .prstate.draft{color:#c9b184;border-color:#4a3f2c;background:rgba(224,163,62,.1)}
+
+  /* 终端 */
+  .term{border-top:1px solid var(--line);background:#14171c;display:flex;flex-direction:column;height:150px;transition:height .12s ease}
+  .term.collapsed{height:33px}
+  .term-head{display:flex;align-items:center;gap:3px;padding:0 10px;height:32px;flex:none;border-bottom:1px solid var(--line)}
+  .term-tab{padding:4px 10px;font-size:11.5px;color:var(--muted);cursor:pointer;border-radius:6px}
+  .term-tab:hover{background:#1e232a}
+  .term-tab.on{color:#dfe7f5;background:#20252d}
+  .term-body{flex:1;min-height:0;overflow:auto;padding:6px 12px;font-family:var(--code-font);font-size:11.5px;line-height:1.7;color:#aab4c4}
+  .term-body .cmd{color:#7fd7ac}
+  .term-body .cmd::before{content:"$ ";color:#5d6675}
+  .term-body .out{color:#8b93a1;white-space:pre-wrap}
+  .term-body .ok{color:#46c88b}
+  .term-body .er{color:#e8607a}
+
+  .dfoot{display:flex;align-items:center;gap:9px;padding:8px 16px;border-top:1px solid var(--line);flex:none}
+  .status{font-size:12px;color:var(--ok);display:flex;align-items:center;gap:6px;opacity:0;transition:opacity .2s}
+  .status.show{opacity:1}
+  .warnline{display:flex;gap:8px;align-items:center;font-size:11.5px;color:#e8c68b;background:rgba(224,163,62,.07);border:1px solid rgba(224,163,62,.25);border-radius:7px;padding:6px 9px;margin:0 16px 8px;flex:none}
+  .empty{color:var(--dim);font-size:12.5px;text-align:center;padding:40px 0}
+
+  /* 弹窗 */
+  .overlay{position:fixed;inset:0;background:rgba(8,10,13,.62);display:none;place-items:center;z-index:200;backdrop-filter:blur(2px)}
+  .overlay.show{display:grid}
+  .modal{width:530px;max-width:92vw;max-height:86vh;overflow:auto;background:linear-gradient(180deg,#1d222a,#191d24);
+    border:1px solid #333a48;border-radius:13px;box-shadow:0 40px 80px -30px #000;padding:16px 18px}
+  .modal h3{margin:0 0 3px;font-size:14.5px;font-weight:600}
+  .modal .sub{font-size:11.5px;color:var(--dim);margin-bottom:14px}
+  .mf{margin-bottom:11px}
+  .mf label{display:block;font-size:10.5px;color:var(--dim);letter-spacing:.5px;text-transform:uppercase;margin-bottom:5px}
+  .min,.msel{width:100%;height:31px;padding:0 9px;border-radius:8px;background:#12151a;border:1px solid var(--line);color:var(--text);font-size:12.5px;outline:none}
+  .min:focus,.msel:focus{border-color:#3d6ea8;box-shadow:0 0 0 3px var(--accent-soft)}
+  .mrow{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .mfoot{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;padding-top:12px;border-top:1px solid var(--line)}
+  .authgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+  .authcard{border:1px solid var(--line);border-radius:9px;padding:8px 6px;text-align:center;cursor:pointer;background:#151920}
+  .authcard:hover{border-color:#3a4453}
+  .authcard.on{border-color:#3d6ea8;background:var(--accent-soft);box-shadow:0 0 0 2px rgba(91,157,255,.12)}
+  .authcard .ai{font-size:15px;line-height:1;margin-bottom:5px}
+  .authcard .at{font-size:11px;color:#cdd6e3}
+  .authcard .ad{font-size:9.5px;color:var(--dim);margin-top:2px}
+  .note{font-size:11px;color:var(--dim);background:#151920;border:1px solid var(--line);border-radius:8px;padding:8px 10px;line-height:1.65}
+  .mhint{font-size:10.5px;color:var(--dim);margin-top:4px;min-height:14px}
+  .mhint.ok{color:var(--ok)}
+  .mhint.warn{color:#e8c68b}
+  .rlist{max-height:190px;overflow:auto;margin-top:8px;display:flex;flex-direction:column;gap:4px}
+  .ritem{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;
+    border:1px solid var(--line);border-radius:8px;padding:6px 9px;cursor:pointer;background:#151920}
+  .ritem:hover{border-color:#3d6ea8;background:#1b2230}
+  .ritem.cloned{opacity:.5;cursor:default}
+  .ritem .rn{font-size:12px;color:#cdd6e3}
+  .ritem .rd{font-size:10px;color:var(--dim);margin-top:2px}
+  .ritem .rmeta{font-size:10px;color:var(--dim);white-space:nowrap}
+  .rowflex{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .switch{display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:1px solid #23282f;gap:12px}
+  .switch:last-of-type{border-bottom:0}
+  .switch .sl{font-size:12.5px}
+  .switch .sd{font-size:10.5px;color:var(--dim)}
+  .track{width:34px;height:19px;border-radius:20px;background:#2b3038;position:relative;transition:.15s;cursor:pointer;flex:none}
+  .track::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#8b93a1;transition:.15s}
+  .track.on{background:#2f6dd0}
+  .track.on::after{left:17px;background:#fff}
+</style>
+</head>
+<body>
+<div class="win">
+  <header>
+    <div class="brand">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round">
+          <circle cx="6" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="12" r="2.4"/>
+          <path d="M6 8.4v7.2M8.4 6h5.5a4 4 0 0 0 4 4"/>
+        </svg>
+      </div>
+      GitSwitch
+    </div>
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg>
+      <input placeholder="搜索平台 / 账号 / 项目…" />
+    </div>
+    <div class="spacer"></div>
+    <button class="btn" id="scanBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M3 7V4h3M21 7V4h-3M3 17v3h3M21 17v3h-3M3 12h18"/></svg>
+      扫描本地仓库
+    </button>
+  </header>
+
+  <div class="cols">
+    <aside class="col platforms">
+      <div class="col-head"><span>平台 · 身份</span><span class="n" id="platCount"></span></div>
+      <div class="scroll" id="tree"></div>
+      <div class="col-foot">
+        <button class="btn" id="settingsBtn" style="flex:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2v.2a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.6 1.7 1.7 0 0 0-1.9.4l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 4 15a2 2 0 0 1-2-2 2 2 0 0 1 2-2 1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 11 4a2 2 0 1 1 4 0 1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1A1.7 1.7 0 0 0 22 11a2 2 0 0 1 0 4 1.7 1.7 0 0 0-2.6 0z"/></svg>
+          设置
+        </button>
+        <button class="ghost" id="addAcctBtn" style="flex:1">+ 添加平台及账号</button>
+      </div>
+    </aside>
+
+    <section class="col projects">
+      <div class="col-head"><span id="projHead">项目</span><span class="n" id="projCount"></span></div>
+      <div class="scroll" style="padding:0"><div class="plist" id="plist"></div></div>
+      <div class="col-foot"><button class="btn primary wide" id="cloneBtn">克隆</button></div>
+    </section>
+
+    <main class="col detail">
+      <div class="dhead">
+        <div class="dtitle">
+          <h2 id="dName">iot-gateway</h2>
+          <span class="tag blue" id="dPlat">GitHub</span>
+          <span class="tag" id="dProto">SSH</span>
+          <span class="tag" id="dBranch">main</span>
+          <span class="spacer"></span>
+          <span class="mono" id="dPath"></span>
+        </div>
+        <div class="mono dpath" id="dUrl"></div>
+        <div class="repometa">
+          <span class="m" title="star">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3 2.7 5.9 6.3.7-4.7 4.3 1.3 6.1L12 17l-5.6 3 1.3-6.1L3 9.6l6.3-.7z"/></svg>
+            <b id="starN">128</b> star
+          </span>
+          <span class="m" title="fork">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="5" r="2"/><circle cx="12" cy="19" r="2"/><path d="M6 7v2a4 4 0 0 0 4 4h4a4 4 0 0 0 4-4V7"/></svg>
+            <b id="forkN">24</b> fork
+          </span>
+          <span class="m" title="watch">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12z"/><circle cx="12" cy="12" r="2.5"/></svg>
+            <b id="watchN">9</b> 关注
+          </span>
+          <button class="btn tiny" id="shareBtn">分享</button>
+        </div>
+      </div>
+
+      <div class="switcher">
+        <div>
+          <div class="label">平台 · 由远程地址决定</div>
+          <div class="sel-t locked" id="platLocked" title="平台由 git remote 决定，不可手动切换">
+            <span style="display:flex;align-items:center;gap:7px;min-width:0">
+              <span class="dot gh" style="width:15px;height:15px;font-size:9px" id="sPlatDot">G</span>
+              <span id="sPlatName" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">GitHub</span>
+            </span>
+            <svg class="lockic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+          </div>
+        </div>
+        <div>
+          <div class="label">git 身份 · 只作用于本项目</div>
+          <div class="combo">
+            <div class="sel-t click" data-menu="acctMenu">
+              <span style="display:flex;align-items:center;gap:7px;min-width:0">
+                <span class="avatar" id="sAcctAv">张</span>
+                <span id="sAcctName" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">张鑫宇 · 个人</span>
+              </span>
+              <i class="caret"></i>
+            </div>
+            <div class="menu" id="acctMenu"></div>
+          </div>
+        </div>
+        <div>
+          <div class="label">认证</div>
+          <div class="seg" id="authSeg">
+            <button class="on" data-auth="ssh">SSH</button>
+            <button data-auth="token">令牌</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="gitbar">
+        <div class="branch" id="branchBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="6" cy="6" r="2.2"/><circle cx="6" cy="18" r="2.2"/><circle cx="18" cy="12" r="2.2"/><path d="M6 8.2v7.6M8.2 6H14a4 4 0 0 1 4 4"/></svg>
+          <span id="branchName">main</span>
+        </div>
+        <button class="btn sm" data-act="fetch">获取</button>
+        <button class="btn sm" data-act="pull">拉取</button>
+        <button class="btn sm primary" data-act="push">推送</button>
+        <span class="sep"></span>
+        <button class="btn sm" data-act="commit">提交</button>
+        <button class="btn sm" data-act="stash">贮藏</button>
+        <button class="btn sm" data-act="branch">分支</button>
+        <button class="btn sm" data-act="merge">合并</button>
+        <button class="btn sm" data-act="rebase">变基</button>
+        <button class="btn sm" data-act="reset">重置</button>
+        <span class="sep"></span>
+        <button class="btn sm" data-act="pr">PR</button>
+        <button class="btn sm" data-act="tag">标签</button>
+        <button class="btn sm" data-act="log">日志</button>
+      </div>
+
+      <div class="tabs">
+        <div class="tab on" data-tab="readme">README</div>
+        <div class="tab" data-tab="git">git</div>
+        <div class="tab" data-tab="files">本地文件<span class="cnt" id="chgCnt">0</span></div>
+        <div class="tab" data-tab="pr">Pull requests<span class="cnt" id="prCnt">0</span></div>
+      </div>
+
+      <div class="pane" id="pane"></div>
+
+      <div class="warnline" id="warnline"></div>
+      <div class="dfoot">
+        <div class="status" id="toast">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" width="13" height="13"><path d="M4 12.5 9 17.5 20 6.5"/></svg>
+          <span id="toastText">已应用</span>
+        </div>
+        <span class="spacer"></span>
+        <button class="btn" data-act="test">测试认证</button>
+        <button class="btn primary" data-act="apply">应用到此仓库</button>
+      </div>
+    </main>
+  </div>
+
+  <div class="term" id="term">
+    <div class="term-head">
+      <div class="term-tab on" data-tt="terminal">终端</div>
+      <div class="term-tab" data-tt="problems">问题 <span id="probCnt">0</span></div>
+      <div class="term-tab" data-tt="output">Git 输出</div>
+      <span class="spacer"></span>
+      <span class="mono" id="termHint">git-switch</span>
+      <button class="btn sm" id="termToggle" style="margin-left:8px">收起</button>
+    </div>
+    <div class="term-body" id="termBody"></div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay"><div class="modal" id="modal"></div></div>
+
+<script>
+/* ================= 数据 ================= */
+const DB = [
+  { id:"github", name:"GitHub", letter:"G", cls:"gh", host:"github.com", accounts:[
+    { id:"gh-me", label:"张鑫宇 · 个人", short:"张", name:"张鑫宇", email:"429092941@qq.com", auth:"ssh", key:"~/.ssh/id_ed25519_github" },
+    { id:"gh-alt", label:"zx-pro · 小号", short:"Z", name:"zx-pro", email:"zx.pro@gmail.com", auth:"token", key:"" },
+  ]},
+  { id:"corp", name:"公司 GitLab", letter:"C", cls:"corp", host:"gitlab.company.com", accounts:[
+    { id:"corp-me", label:"张鑫宇 · 公司", short:"张", name:"张鑫宇", email:"zhangxinyu@company.com", auth:"ssh", key:"~/.ssh/id_ed25519_corp" },
+    { id:"corp-bot", label:"CI 机器人", short:"CI", name:"gitlab-ci", email:"ci@company.com", auth:"token", key:"" },
+  ]},
+  { id:"gitee", name:"Gitee", letter:"E", cls:"gitee", host:"gitee.com", accounts:[
+    { id:"gitee-a", label:"3237138707", short:"3", name:"3237138707", email:"3237138707@qq.com", auth:"token", key:"" },
+  ]},
+];
+
+/* 仓库属于平台；accountId 只是"这个项目当前用哪个 git 身份" */
+const REPOS = [
+  { id:"r1", plat:"github", accountId:"gh-me",    name:"iot-gateway",     path:"~/WorkSpace/iot-gateway",     url:"git@github.com:zhangxinyu/iot-gateway.git",        branch:"main",        ahead:2, behind:0, stars:128, forks:24, watch:9 },
+  { id:"r2", plat:"github", accountId:"gh-me",    name:"spring-boot-demo", path:"~/WorkSpace/spring-boot-demo", url:"git@github.com:zhangxinyu/spring-boot-demo.git",   branch:"dev",         ahead:0, behind:1, stars:12,  forks:3,  watch:2 },
+  { id:"r3", plat:"github", accountId:"gh-alt",   name:"ruoyi-plus",      path:"~/WorkSpace/ruoyi-plus",      url:"git@github.com:zx-pro/ruoyi-plus.git",             branch:"master",      ahead:0, behind:0, stars:892, forks:310, watch:64 },
+  { id:"r4", plat:"corp",   accountId:"corp-me",  name:"erp-backend",     path:"~/WorkSpace/erp-backend",     url:"ssh://git@gitlab.company.com/erp/backend.git",     branch:"release/2.4", ahead:0, behind:3, stars:0,   forks:1,  watch:5 },
+  { id:"r5", plat:"corp",   accountId:"corp-me",  name:"erp-frontend",    path:"~/WorkSpace/erp-frontend",    url:"ssh://git@gitlab.company.com/erp/frontend.git",    branch:"develop",     ahead:1, behind:0, stars:0,   forks:0,  watch:3 },
+  { id:"r6", plat:"gitee",  accountId:"gitee-a",  name:"mqtt-bridge",     path:"~/WorkSpace/mqtt-bridge",     url:"https://gitee.com/3237138707/mqtt-bridge.git",     branch:"main",        ahead:0, behind:0, stars:6,   forks:2,  watch:1 },
+];
+const reposOfPlat = (pid)=>REPOS.filter(r=>r.plat===pid);
+const reposOfAcct = (aid)=>REPOS.filter(r=>r.accountId===aid);
+
+/* 分支 */
+const BRANCHES = {
+  r1:{
+    local:[
+      { name:"main", cur:true, lane:0 },
+      { name:"feat/rule-nested", lane:0 },
+      { name:"feat/mtls", lane:1 },
+    ],
+    remote:[
+      { name:"origin/main", lane:0 },
+      { name:"origin/feat/rule-nested", lane:0 },
+      { name:"origin/feat/mtls", lane:1 },
+      { name:"origin/develop", lane:2 },
+    ],
+    tags:["v1.3.0","v1.2.0"],
+  },
+  default:{ local:[{name:"main",cur:true,lane:0}], remote:[{name:"origin/main",lane:0}], tags:[] },
+};
+
+/* 提交（含 parents，用于画树） */
+const COMMITS_TREE = {
+  r1:[
+    { h:"9f2a1c7", msg:"修复设备离线重连时心跳未重置", au:"张鑫宇", d:"2 小时前", parents:["7d3e2a1"], refs:[{t:"HEAD → main",k:"head"},{t:"origin/main",k:"remote"}] },
+    { h:"7d3e2a1", msg:"规则引擎支持嵌套条件表达式", au:"张鑫宇", d:"昨天 18:24", parents:["4b8de01"], refs:[{t:"feat/rule-nested",k:"local"}] },
+    { h:"4b8de01", msg:"Merge branch 'feat/mtls'", au:"王工", d:"昨天 11:02", parents:["c71f3aa","b7e4f21"], refs:[] },
+    { h:"b7e4f21", msg:"接入层支持 TLS 双向认证", au:"王工", d:"11-24", parents:["c71f3aa"], refs:[{t:"feat/mtls",k:"local"}] },
+    { h:"c71f3aa", msg:"升级 RuoYi 依赖到 5.3.1", au:"李工", d:"11-22", parents:["0e5b942"], refs:[{t:"v1.3.0",k:"tag"}] },
+    { h:"0e5b942", msg:"补充 MQTT 接入压力测试", au:"张鑫宇", d:"11-21", parents:["77ac203"], refs:[] },
+    { h:"77ac203", msg:"优化设备鉴权缓存失效策略", au:"王工", d:"11-19", parents:["2c9f0b3"], refs:[{t:"v1.2.0",k:"tag"}] },
+    { h:"2c9f0b3", msg:"初始化项目骨架", au:"张鑫宇", d:"11-01", parents:[], refs:[] },
+  ],
+  default:[
+    { h:"0000000", msg:"尚无提交记录", au:"—", d:"—", parents:[], refs:[] },
+  ],
+};
+
+const CHANGES = {
+  r1:[
+    { name:"src", dir:true, depth:0 },
+    { name:"main", dir:true, depth:1 },
+    { name:"java", dir:true, depth:2 },
+    { name:"com/example/gateway", dir:true, depth:3 },
+    { name:"MqttBrokerConfig.java", path:"MqttBrokerConfig.java", st:"M", depth:4, add:6, del:2 },
+    { name:"DeviceAuthService.java", path:"DeviceAuthService.java", st:"A", depth:4, add:34, del:0 },
+    { name:"test", dir:true, depth:2 },
+    { name:"GatewayTest.java", path:"GatewayTest.java", st:"R", depth:3, add:0, del:0 },
+    { name:"pom.xml", path:"pom.xml", st:"M", depth:0, add:2, del:2 },
+    { name:"README.md", path:"README.md", st:"M", depth:0, add:1, del:1 },
+    { name:"old-design.md", path:"docs/old-design.md", st:"D", depth:1, add:0, del:18 },
+    { name:"notes.tmp", path:"notes.tmp", st:"U", depth:0, add:0, del:0 },
+  ],
+  default:[
+    { name:"src", dir:true, depth:0 },
+    { name:"README.md", path:"README.md", st:"M", depth:0, add:1, del:1 },
+  ],
+};
+
+const FILES_CONTENT = {
+  "MqttBrokerConfig.java":{ lang:"java", lines:[
+    ["张鑫宇","9f2a1c7","package com.example.gateway.mqtt;"],
+    ["张鑫宇","9f2a1c7",""],
+    ["王工","77ac203","import org.springframework.context.annotation.Configuration;"],
+    ["张鑫宇","9f2a1c7","import org.springframework.context.annotation.Bean;"],
+    ["王工","77ac203",""],
+    ["张鑫宇","9f2a1c7","@Configuration"],
+    ["张鑫宇","9f2a1c7","public class MqttBrokerConfig {"],
+    ["张鑫宇","9f2a1c7",""],
+    ["李工","c71f3aa","    /** 心跳超时，单位秒 */"],
+    ["张鑫宇","9f2a1c7","    private int heartbeatTimeout = 60);"],
+    ["张鑫宇","9f2a1c7",""],
+    ["王工","77ac203","    @Bean"],
+    ["张鑫宇","9f2a1c7","    public MqttBroker broker() {"],
+    ["张鑫宇","9f2a1c7","        return MqttBroker.builder()"],
+    ["张鑫宇","9f2a1c7","            .port(1883)"],
+    ["张鑫宇","9f2a1c7","            .heartbeatTimeout(heartbeatTimeout)"],
+    ["张鑫宇","9f2a1c7","            .build();"],
+    ["张鑫宇","9f2a1c7","    }"],
+    ["张鑫宇","9f2a1c7","}"],
+  ]},
+  "DeviceAuthService.java":{ lang:"java", lines:[
+    ["张鑫宇","9f2a1c7","package com.example.gateway.auth;"],
+    ["张鑫宇","9f2a1c7",""],
+    ["张鑫宇","9f2a1c7","public class DeviceAuthService {"],
+    ["张鑫宇","9f2a1c7","    private final Cache cache = new Cache(600);"],
+    ["张鑫宇","9f2a1c7",""],
+    ["张鑫宇","9f2a1c7","    public boolean verify(String deviceId, String secret) {"],
+    ["张鑫宇","9f2a1c7","        if (cache.hit(deviceId)) return true;"],
+    ["张鑫宇","9f2a1c7","        boolean ok = store.check(deviceId, secret);"],
+    ["张鑫宇","9f2a1c7","        if (ok) cache.put(deviceId);"],
+    ["张鑫宇","9f2a1c7","        return ok;"],
+    ["张鑫宇","9f2a1c7","    }"],
+    ["张鑫宇","9f2a1c7","}"],
+  ]},
+  "pom.xml":{ lang:"xml", lines:[
+    ["李工","c71f3aa","<?xml version=\"1.0\" encoding=\"UTF-8\"?>"],
+    ["李工","c71f3aa","<project xmlns=\"http://maven.apache.org/POM/4.0.0\">"],
+    ["李工","c71f3aa","  <modelVersion>4.0.0</modelVersion>"],
+    ["李工","c71f3aa","  <groupId>com.example</groupId>"],
+    ["李工","c71f3aa","  <artifactId>iot-gateway</artifactId>"],
+    ["李工","c71f3aa","  <version>5.3.1</version>"],
+    ["李工","c71f3aa","  <properties>"],
+    ["李工","c71f3aa","    <java.version>17</java.version>"],
+    ["李工","c71f3aa","  </properties>"],
+    ["李工","c71f3aa","</project>"],
+  ]},
+  "README.md":{ lang:"md", lines:[
+    ["张鑫宇","4b8de01","# iot-gateway"],
+    ["张鑫宇","4b8de01",""],
+    ["张鑫宇","4b8de01","物联网设备接入网关，基于 Spring Boot 3 + MQTT。"],
+    ["张鑫宇","4b8de01",""],
+    ["张鑫宇","4b8de01","## 快速开始"],
+    ["张鑫宇","4b8de01",""],
+    ["张鑫宇","4b8de01","```bash"],
+    ["张鑫宇","4b8de01","mvn -pl iot-gateway spring-boot:run"],
+    ["张鑫宇","4b8de01","```"],
+    ["张鑫宇","4b8de01",""],
+    ["张鑫宇","4b8de01","## 模块"],
+    ["张鑫宇","4b8de01",""],
+    ["张鑫宇","4b8de01","- `device-auth` 设备鉴权"],
+    ["张鑫宇","4b8de01","- `mqtt-broker` 接入层"],
+    ["张鑫宇","4b8de01","- `rule-engine` 规则引擎"],
+  ]},
+  "GatewayTest.java":{ lang:"java", lines:[
+    ["张鑫宇","9f2a1c7","public class GatewayTest {"],
+    ["张鑫宇","9f2a1c7","    void testHeartbeat() {"],
+    ["张鑫宇","9f2a1c7","        assert broker.heartbeat(60);"],
+    ["张鑫宇","9f2a1c7","    }"],
+    ["张鑫宇","9f2a1c7","}"],
+  ]},
+  "notes.tmp":{ lang:"txt", lines:[["—","—","（未跟踪文件，暂不展示内容）"]]},
+  "old-design.md":{ lang:"md", lines:[["王工","77ac203","# 旧版设计（已删除）"]]},
+};
+
+const README = {
+  r1:`<h3>iot-gateway</h3>
+<p>物联网设备接入网关。基于 Spring Boot 3 + MQTT，负责设备鉴权、上行数据解析与规则转发。</p>
+<h3>快速开始</h3>
+<pre>mvn -pl iot-gateway spring-boot:run</pre>
+<h3>模块</h3>
+<ul><li><code>device-auth</code> 设备鉴权</li><li><code>mqtt-broker</code> 接入层</li><li><code>rule-engine</code> 规则引擎</li></ul>
+<h3>约定</h3>
+<p>分支 <code>main</code> 受保护，合并前需通过 <code>mvn verify</code>。</p>`,
+  default:`<h3>README</h3><p>该项目暂无 README，或尚未拉取到本地。</p>`,
+};
+
+const PRS = {
+  r1:[
+    { n:142, t:"修复设备离线重连时心跳未重置", state:"open", author:"张鑫宇", from:"fix/heartbeat", to:"main", ci:"通过", files:3 },
+    { n:139, t:"规则引擎支持嵌套条件表达式", state:"open", author:"张鑫宇", from:"feat/rule-nested", to:"main", ci:"通过", files:11 },
+    { n:137, t:"升级 RuoYi 依赖到 5.3.1", state:"merged", author:"李工", from:"chore/ruoyi-5.3.1", to:"main", ci:"通过", files:2 },
+    { n:145, t:"接入层支持 TLS 双向认证", state:"draft", author:"王工", from:"feat/mtls", to:"main", ci:"进行中", files:7 },
+  ],
+  default:[],
+};
+
+const DIFF = {
+  "MqttBrokerConfig.java":[
+    ["ctx",8,"    /** 心跳超时，单位秒 */"],
+    ["del",9,"    private int heartbeatTimeout = 30;"],
+    ["add",0,"    private int heartbeatTimeout = 60);"],
+    ["ctx",10,""],
+    ["ctx",11,"    @Bean"],
+    ["ctx",12,"    public MqttBroker broker() {"],
+    ["del",13,"        return MqttBroker.create(1883);"],
+    ["add",0,"        return MqttBroker.builder()"],
+    ["add",0,"            .port(1883)"],
+    ["add",0,"            .heartbeatTimeout(heartbeatTimeout)"],
+    ["add",0,"            .build();"],
+    ["ctx",14,"    }"],
+  ],
+  default:[
+    ["ctx",1,"# README"],
+    ["del",2,"物联网设备接入网关。"],
+    ["add",0,"物联网设备接入网关，基于 Spring Boot 3 + MQTT。"],
+  ],
+};
+
+const LANE_COLORS = ["#5b9dff","#e0a33e","#3fbf7f","#c792ea","#ff8f6b","#4ec9b0"];
+
+/* ================= 状态 ================= */
+const st = {
+  plat:"github", acct:"gh-me", repo:"r1", tab:"readme",
+  openPlats:["github","corp","gitee"],
+  file:"MqttBrokerConfig.java", fileView:"edit", diffMode:"inline", blame:true,
+  autoSave:true, formatOnSave:true, termOpen:true, termTab:"terminal",
+  edits:{}, usage:null, selCommit:null,
+};
+
+const $ = (id)=>document.getElementById(id);
+const esc = (s)=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const findPlat = (id)=>DB.find(p=>p.id===id);
+const findAcct = (pid,aid)=>findPlat(pid)?.accounts.find(a=>a.id===aid);
+const findRepo = ()=>{
+  const r = REPOS.find(x=>x.id===st.repo);
+  if (!r) return null;
+  return { plat: findPlat(r.plat), repo: r, acct: findAcct(r.plat, r.accountId) };
+};
+const changesOf = (rid)=>CHANGES[rid] || CHANGES.default;
+const fileList = (rid)=>changesOf(rid).filter(c=>!c.dir);
+const commitsOf = (rid)=>COMMITS_TREE[rid] || COMMITS_TREE.default;
+const branchesOf = (rid)=>BRANCHES[rid] || BRANCHES.default;
+const langOf = (n)=>/\.java$/.test(n)?"java":/\.xml$/.test(n)?"xml":/\.md$/.test(n)?"md":"txt";
+const authLabel = (a)=>({ssh:"SSH 密钥",token:"令牌",password:"账号密码",file:"凭据文件"})[a] || a;
+
+/* ================= 终端 ================= */
+const termLines = [];
+function term(html){ termLines.push(html); if (termLines.length>80) termLines.shift(); if (st.termTab==="terminal") renderTerm(); }
+function termCmd(c){ term(`<div class="cmd">${esc(c)}</div>`); }
+function termOut(t,cls="out"){ term(`<div class="${cls}">${esc(t)}</div>`); }
+function renderTerm(){ $("termBody").innerHTML = termLines.join(""); $("termBody").scrollTop = $("termBody").scrollHeight; }
+
+/* ================= 语法高亮 / 检查 ================= */
+function hlLine(text, lang, usage){
+  let s = esc(text);
+  if (lang==="java"){
+    s = s.replace(/(\/\/[^\n]*)/g,'<span class="cm">$1</span>')
+         .replace(/("[^"]*")/g,'<span class="str">$1</span>')
+         .replace(/\b(package|import|public|private|protected|class|return|new|void|int|long|boolean|final|if|else|static)\b/g,'<span class="kw">$1</span>')
+         .replace(/\b(\d+)\b/g,'<span class="num">$1</span>')
+         .replace(/(@\w+)/g,'<span class="ann">$1</span>');
+  } else if (lang==="xml"){
+    s = s.replace(/(&lt;\/?[\w:.-]+)/g,'<span class="kw">$1</span>')
+         .replace(/("[^"]*")/g,'<span class="str">$1</span>');
+  } else if (lang==="md"){
+    s = s.replace(/^(#{1,6} .*)$/g,'<span class="kw">$1</span>')
+         .replace(/(`[^`]*`)/g,'<span class="str">$1</span>')
+         .replace(/^(\s*[-*] )/g,'<span class="ann">$1</span>');
+  }
+  if (usage){
+    const re = new RegExp("\\b"+usage.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"\\b","g");
+    s = s.replace(re, m=>`<mark class="use">${m}</mark>`);
+  }
+  return s || " ";
+}
+
+function checkSyntax(text, lang){
+  const lines = text.split("\n");
+  const errs = [];
+  let braces=0, parens=0;
+  lines.forEach((line,i)=>{
+    const code = line.replace(/\/\/.*$/,"").replace(/"(?:[^"\\]|\\.)*"/g,'""');
+    const ob=(code.match(/{/g)||[]).length, cb=(code.match(/}/g)||[]).length;
+    const op=(code.match(/\(/g)||[]).length, cp=(code.match(/\)/g)||[]).length;
+    if (lang!=="java") return;
+    braces += ob-cb; parens += op-cp;
+    if (braces < 0){ errs.push({ line:i, msg:"多余的 '}'" }); braces = 0; }
+    if (parens < 0){ errs.push({ line:i, msg:"多余的 ')'" }); parens = 0; }
+  });
+  if (lang==="java" && parens>0) errs.push({ line:lines.length-1, msg:`括号未闭合（缺 ${parens} 个 ')'）` });
+  if (lang==="java" && braces>0) errs.push({ line:lines.length-1, msg:`花括号未闭合（缺 ${braces} 个 '}'）` });
+  return errs;
+}
+
+/* ================= 文本 ================= */
+function baseText(name){
+  const fc = FILES_CONTENT[name];
+  return fc ? fc.lines.map(l=>l[2]).join("\n") : "";
+}
+function textOf(name){ return st.edits[name] != null ? st.edits[name] : baseText(name); }
+function setText(name, txt){ st.edits[name] = txt; }
+function isDirty(name){ return textOf(name) !== baseText(name); }
+
+/* ================= 左栏 ================= */
+/* 把某个 git 身份应用到一个项目：只改这个项目的 user.name/email 与认证 */
+const credHelper = ()=>{
+  const ua = navigator.userAgent;
+  if (/Mac/.test(ua)) return "osxkeychain";
+  if (/Win/.test(ua)) return "manager";
+  return "libsecret";
+};
+function applyIdentity(repoId, acctId){
+  const r = REPOS.find(x=>x.id===repoId);
+  if (!r) return;
+  const a = findAcct(r.plat, acctId);
+  if (!a) return;
+  r.accountId = acctId;
+  st.acct = acctId;
+  termCmd(`cd ${r.path}`);
+  termOut(`git config --local user.name "${a.name}"`);
+  termOut(`git config --local user.email "${a.email}"`);
+  if (a.auth === "ssh") termOut(`git config --local core.sshCommand "ssh -i ${a.key}"`);
+  else termOut(`git config --local credential.helper ${credHelper()}`);
+  termOut(`${r.name} 之后的 git 操作使用该身份：${a.label} <${a.email}>`, "ok");
+  renderAll();
+  flash(`${r.name} → ${a.label}`);
+}
+
+function renderTree(){
+  const cur = findRepo();
+  const curAcctId = cur?.repo.accountId;
+  $("tree").innerHTML = DB.map(p=>{
+    const open = st.openPlats.includes(p.id);
+    const nRepo = reposOfPlat(p.id).length;
+    const inner = open ? p.accounts.map(a=>{
+      const used = reposOfAcct(a.id).length;
+      const isCur = a.id === curAcctId;
+      return `<div class="acct-row ${isCur?"sel":""}" data-plat="${p.id}" data-acct="${a.id}"
+          title="点击：把该身份应用到当前选中的项目">
+          <span class="avatar">${esc(a.short)}</span>
+          <span class="acct-label">${esc(a.label)}<small>${esc(a.email)} · ${authLabel(a.auth)}</small></span>
+          <span class="badge">${isCur?"当前":(used?used+" 项目":"")}</span>
+        </div>`;
+    }).join("") : "";
+    return `<div class="plat-row ${open?"open":""}" data-plat-only="${p.id}">
+      <span class="dot ${p.cls}">${p.letter}</span>
+      <span>${esc(p.name)}</span>
+      <span style="display:flex;align-items:center;gap:8px">
+        <span class="badge">${p.accounts.length} 身份 · ${nRepo} 项目</span>
+        <i class="caret-s ${open?"open":""}"></i>
+      </span>
+    </div>${inner}`;
+  }).join("");
+  $("platCount").textContent = `${DB.length} 平台 · ${DB.reduce((s,p)=>s+p.accounts.length,0)} 身份 · ${REPOS.length} 项目`;
+
+  $("tree").querySelectorAll(".plat-row").forEach(el=>el.onclick=()=>{
+    const id = el.dataset.platOnly;
+    st.openPlats.includes(id) ? st.openPlats = st.openPlats.filter(x=>x!==id) : st.openPlats.push(id);
+    renderTree();
+  });
+  $("tree").querySelectorAll(".acct-row").forEach(el=>el.onclick=()=>{
+    const pid = el.dataset.plat, aid = el.dataset.acct;
+    const curNow = findRepo();
+    if (!curNow){ flash("请先在中间列表选择一个项目"); return; }
+    if (curNow.repo.plat !== pid){
+      flash(`当前项目属于 ${curNow.plat.name}，请先选择该平台下的项目`);
+      return;
+    }
+    applyIdentity(curNow.repo.id, aid);
+  });
+}
+
+/* ================= 中栏 ================= */
+function renderProjects(){
+  const p = findPlat(st.plat);
+  const list = reposOfPlat(p.id);
+  $("projHead").textContent = `${p.name} · 项目`;
+  $("projCount").textContent = `${list.length} 个`;
+  $("plist").innerHTML = list.length ? list.map(r=>{
+    const n = fileList(r.id).length;
+    const acct = findAcct(p.id, r.accountId);
+    return `<div class="pcard ${r.id===st.repo?"sel":""}" data-repo="${r.id}">
+      <div class="pn">${esc(r.name)}<span class="spacer"></span>
+        ${n?`<span class="chip">${n} 变更</span>`:`<span class="chip ok">干净</span>`}</div>
+      <div class="pu">${esc(r.url)}</div>
+      <div class="pmeta">
+        <span class="chip blue">${esc(r.branch)}</span>
+        <span class="chip" style="display:inline-flex;align-items:center;gap:5px;padding-left:2px">
+          <span class="avatar" style="width:15px;height:15px;font-size:8.5px">${esc(acct.short)}</span>${esc(acct.label)}</span>
+        ${r.ahead?`<span class="chip">↑${r.ahead}</span>`:""}
+        ${r.behind?`<span class="chip">↓${r.behind}</span>`:""}
+        <span class="chip star">★ ${r.stars}</span>
+      </div>
+    </div>`;
+  }).join("") : `<div class="empty">该平台下暂无项目<br>点击下方「克隆」拉取一个</div>`;
+  $("plist").querySelectorAll(".pcard").forEach(el=>el.onclick=()=>{
+    st.repo = el.dataset.repo; st.plat = findRepo().repo.plat; st.file = null; st.usage=null; st.selCommit=null;
+    renderAll();
+  });
+}
+
+/* ================= git 树（分支图） ================= */
+const ROW_H = 38, LANE_W = 18, PAD = 8;
+
+function buildGraph(commits){
+  const lanes = [];
+  const rows = [];
+  for (const c of commits){
+    const before = lanes.slice();
+    let lane = lanes.indexOf(c.h);
+    if (lane === -1){
+      lane = lanes.indexOf(null);
+      if (lane === -1){ lane = lanes.length; lanes.push(null); }
+    }
+    for (let i=0;i<lanes.length;i++) if (i!==lane && lanes[i]===c.h) lanes[i] = null;
+    lanes[lane] = c.parents[0] || null;
+    const pl = [];
+    if (c.parents[0]) pl.push(lane);
+    for (let k=1;k<c.parents.length;k++){
+      let l = lanes.indexOf(c.parents[k]);
+      if (l === -1){
+        l = lanes.indexOf(null);
+        if (l === -1){ l = lanes.length; lanes.push(null); }
+        lanes[l] = c.parents[k];
+      }
+      pl.push(l);
+    }
+    rows.push({ c, lane, before, after: lanes.slice(), pl });
+  }
+  const laneCount = Math.max(1, ...rows.map(r=>Math.max(r.before.length, r.after.length, r.lane+1)));
+  return { rows, laneCount };
+}
+
+function graphSvg(row, laneCount){
+  const W = laneCount * LANE_W + PAD*2, H = ROW_H, mid = H/2;
+  const x = (l)=> PAD + l*LANE_W + LANE_W/2;
+  const col = (l)=> LANE_COLORS[l % LANE_COLORS.length];
+  let seg = "";
+
+  // 贯穿线
+  for (let l=0;l<laneCount;l++){
+    const inB = row.before[l] ?? null, outA = row.after[l] ?? null;
+    if (l === row.lane) continue;
+    if (inB && outA) seg += `<line x1="${x(l)}" y1="0" x2="${x(l)}" y2="${H}" stroke="${col(l)}" stroke-width="1.6" opacity=".85"/>`;
+  }
+  // 汇入本提交的侧分支
+  for (let l=0;l<laneCount;l++){
+    if (l === row.lane) continue;
+    const inB = row.before[l] ?? null, outA = row.after[l] ?? null;
+    if (inB && !outA){
+      seg += `<path d="M ${x(l)} 0 C ${x(l)} ${mid*0.6}, ${x(row.lane)} ${mid*0.4}, ${x(row.lane)} ${mid}" fill="none" stroke="${col(l)}" stroke-width="1.6" opacity=".9"/>`;
+    }
+  }
+  // 本提交纵向
+  const inOwn = (row.before[row.lane] ?? null) !== null;
+  if (inOwn) seg += `<line x1="${x(row.lane)}" y1="0" x2="${x(row.lane)}" y2="${mid}" stroke="${col(row.lane)}" stroke-width="1.8"/>`;
+  // 到父提交
+  row.pl.forEach((p,idx)=>{
+    if (idx===0 && p===row.lane){
+      seg += `<line x1="${x(p)}" y1="${mid}" x2="${x(p)}" y2="${H}" stroke="${col(p)}" stroke-width="1.8"/>`;
+    } else {
+      seg += `<path d="M ${x(row.lane)} ${mid} C ${x(row.lane)} ${mid*1.5}, ${x(p)} ${mid*1.4}, ${x(p)} ${H}" fill="none" stroke="${col(p)}" stroke-width="1.6" opacity=".9"/>`;
+    }
+  });
+  // 提交点
+  seg += `<circle cx="${x(row.lane)}" cy="${mid}" r="4.2" fill="#191c22" stroke="${col(row.lane)}" stroke-width="2"/>`;
+  if (row.c.parents.length > 1) seg += `<circle cx="${x(row.lane)}" cy="${mid}" r="1.8" fill="${col(row.lane)}"/>`;
+
+  return `<svg width="${W}" height="${H}">${seg}</svg>`;
+}
+
+function renderGitPane(){
+  const r = findRepo().repo;
+  const br = branchesOf(r.id);
+  const commits = commitsOf(r.id);
+  const { rows, laneCount } = buildGraph(commits);
+
+  const bchip = (b, isRemote)=>{
+    const c = LANE_COLORS[(b.lane||0) % LANE_COLORS.length];
+    return `<span class="bchip ${b.cur?"cur":""}" data-branch="${esc(b.name)}">
+      <span class="lane-dot" style="background:${c}"></span>
+      <svg class="bic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="12" r="2"/><path d="M6 8v8M8 6h6a4 4 0 0 1 4 4"/></svg>
+      ${esc(b.name)}</span>`;
+  };
+
+  const bar = `<div class="branchbar">
+    <div class="bgroup"><span class="glabel">本地</span>${br.local.map(b=>bchip(b,false)).join("")}</div>
+    <div class="bgroup"><span class="glabel">远程</span>${br.remote.map(b=>bchip(b,true)).join("")}</div>
+    ${br.tags.length?`<div class="bgroup"><span class="glabel">标签</span>${br.tags.map(t=>`<span class="bchip">${esc(t)}</span>`).join("")}</div>`:""}
+    <span class="spacer"></span>
+    <span class="mono">${commits.length} 提交 · ${br.local.length} 本地分支</span>
+  </div>`;
+
+  const graphW = laneCount * LANE_W + PAD*2 + 6;
+  const list = rows.map((row,i)=>`
+    <div class="grow ${st.selCommit===row.c.h?"sel":""}" data-commit="${row.c.h}" style="--graph-w:${graphW}px">
+      <span class="gsvg">${graphSvg(row, laneCount)}</span>
+      <span class="ghash">${esc(row.c.h)}</span>
+      <span class="gmsg"><span class="txt" title="${esc(row.c.msg)}">${esc(row.c.msg)}</span>
+        ${row.c.refs.length?`<span class="grefs">${row.c.refs.map(rf=>`<span class="ref ${rf.k}">${esc(rf.t)}</span>`).join("")}</span>`:""}
+      </span>
+      <span class="gmeta"><span>${esc(row.c.au)}</span><span>${esc(row.c.d)}</span></span>
+    </div>`).join("");
+
+  return `<div class="gitview">${bar}<div class="graphwrap">${list}</div></div>`;
+}
+
+/* ================= 编辑器 ================= */
+function renderEditBody(){
+  const name = st.file;
+  const text = textOf(name);
+  const lang = langOf(name);
+  const fc = FILES_CONTENT[name];
+  const lines = text.split("\n");
+  const errs = checkSyntax(text, lang);
+  const errLines = new Set(errs.map(e=>e.line));
+  const gutW = st.blame ? "154px" : "52px";
+
+  const gutter = lines.map((_,i)=>{
+    const blame = st.blame
+      ? `<span class="blame">${esc(fc?.lines[i]?.[0] || "工作区")} · ${esc(fc?.lines[i]?.[1]?.slice(0,4) || "编辑")}</span>` : "";
+    return `<div class="erow ${errLines.has(i)?"err":""}">${blame}<span class="ln">${i+1}</span><span class="emark">●</span></div>`;
+  }).join("");
+
+  const body = lines.map((ln,i)=>
+    `<div class="pl ${errLines.has(i)?"errline":""}">${hlLine(ln,lang,st.usage)}</div>`).join("");
+
+  return `<div class="editor" style="--gut-w:${gutW}">
+    <div class="egutter"><div class="egutter-in" id="eGut">${gutter}</div></div>
+    <div class="elayers" id="eLayers">
+      <div class="ehl" id="eHl">${body}</div>
+      <textarea class="ecode" id="eCode" spellcheck="false" wrap="off"></textarea>
+    </div>
+  </div>`;
+}
+
+function attachEditor(){
+  const ta = $("eCode"); if (!ta) return;
+  const name = st.file;
+  ta.value = textOf(name);
+  const onInput = ()=>{ setText(name, ta.value); syncEditor(); scheduleSave(); };
+  ta.addEventListener("input", onInput);
+  ta.addEventListener("scroll", syncScroll);
+  ta.addEventListener("keyup", updateUsage);
+  ta.addEventListener("click", updateUsage);
+  ta.addEventListener("keydown", (e)=>{
+    if ((e.metaKey||e.ctrlKey) && e.key.toLowerCase()==="s"){ e.preventDefault(); saveNow(true); }
+    if (e.key==="Tab"){
+      e.preventDefault();
+      const s = ta.selectionStart, en = ta.selectionEnd;
+      ta.value = ta.value.slice(0,s)+"    "+ta.value.slice(en);
+      ta.selectionStart = ta.selectionEnd = s+4;
+      onInput();
+    }
+  });
+  syncEditor();
+  updateUsage();
+}
+
+function syncScroll(){
+  const ta = $("eCode"); if (!ta) return;
+  const hl = $("eHl"), eg = $("eGut");
+  if (hl) hl.style.transform = `translate(${-ta.scrollLeft}px, ${-ta.scrollTop}px)`;
+  if (eg) eg.style.transform = `translateY(${-ta.scrollTop}px)`;
+}
+
+function syncEditor(){
+  const ta = $("eCode"); if (!ta) return;
+  const name = st.file, lang = langOf(name);
+  const lines = ta.value.split("\n");
+  const errs = checkSyntax(ta.value, lang);
+  const errLines = new Set(errs.map(e=>e.line));
+  const fc = FILES_CONTENT[name];
+
+  const hl = $("eHl");
+  if (hl) hl.innerHTML = lines.map((ln,i)=>
+    `<div class="pl ${errLines.has(i)?"errline":""}">${hlLine(ln,lang,st.usage)}</div>`).join("");
+
+  const eg = $("eGut");
+  if (eg) eg.innerHTML = lines.map((_,i)=>{
+    const blame = st.blame
+      ? `<span class="blame">${esc(fc?.lines[i]?.[0] || "工作区")} · ${esc(fc?.lines[i]?.[1]?.slice(0,4) || "编辑")}</span>` : "";
+    return `<div class="erow ${errLines.has(i)?"err":""}">${blame}<span class="ln">${i+1}</span><span class="emark">●</span></div>`;
+  }).join("");
+
+  syncScroll();
+  updateErrBadge(errs);
+}
+
+function updateErrBadge(errs){
+  const list = errs || checkSyntax(textOf(st.file), langOf(st.file));
+  $("probCnt").textContent = list.length;
+  const b = $("errBadge");
+  if (b){
+    b.className = list.length ? "errbadge" : "savebadge on";
+    b.textContent = list.length ? `⚠ ${list.length} 个问题` : `✓ 无问题`;
+  }
+}
+
+function updateUsage(){
+  const ta = $("eCode"); if (!ta) return;
+  const pos = ta.selectionStart, text = ta.value;
+  let s = pos, e = pos;
+  while (s>0 && /[A-Za-z0-9_$]/.test(text[s-1])) s--;
+  while (e<text.length && /[A-Za-z0-9_$]/.test(text[e])) e++;
+  const word = text.slice(s,e);
+  st.usage = /^[A-Za-z_$][A-Za-z0-9_$]{1,}$/.test(word) ? word : null;
+  syncEditor();
+  const ub = $("usageBadge");
+  if (ub){
+    if (st.usage){
+      const cnt = (text.match(new RegExp("\\b"+st.usage.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"\\b","g"))||[]).length;
+      ub.style.display = "";
+      ub.textContent = `引用 ${st.usage} · ${cnt} 处`;
+    } else ub.style.display = "none";
+  }
+}
+
+let saveTimer;
+function scheduleSave(){
+  if (!st.autoSave){ setSaveBadge("未保存", false); return; }
+  setSaveBadge("编辑中…", false);
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(()=>saveNow(false), 700);
+}
+function saveNow(manual){
+  if (st.formatOnSave && langOf(st.file)==="java"){
+    const fmt = formatJava(textOf(st.file));
+    if (fmt !== textOf(st.file)){
+      setText(st.file, fmt);
+      const ta = $("eCode"); if (ta){ ta.value = fmt; syncEditor(); }
+    }
+  }
+  setSaveBadge(st.autoSave ? "已自动保存" : "已保存", true);
+  if (manual){
+    termCmd(`git add ${st.file}`);
+    termOut("已保存并暂存", "ok");
+    flash(`已保存 ${st.file}`);
+  }
+}
+function setSaveBadge(text, ok){
+  const b = $("saveBadge"); if (!b) return;
+  b.className = "savebadge" + (ok ? " on" : "");
+  b.innerHTML = `<span class="dt"></span>${text}`;
+}
+function formatJava(src){
+  const out = []; let ind = 0;
+  for (const raw of src.split("\n")){
+    const t = raw.trim();
+    if (/^\}/.test(t)) ind = Math.max(0, ind-1);
+    out.push(t ? "    ".repeat(ind)+t : "");
+    if (/\{\s*$/.test(t)) ind++;
+  }
+  return out.join("\n");
+}
+
+/* ================= diff ================= */
+function renderDiff(){
+  const d = DIFF[st.file] || DIFF.default;
+  if (st.diffMode==="side"){
+    const left = d.filter(x=>x[0]!=="add").map(x=>
+      `<div class="dline ${x[0]==="del"?"del":""}"><span class="dl">${x[1]||""}</span><span class="dt">${esc(x[2])}</span></div>`).join("");
+    const right = d.filter(x=>x[0]!=="del").map(x=>
+      `<div class="dline ${x[0]==="add"?"add":""}"><span class="dl">${x[1]||""}</span><span class="dt">${esc(x[2])}</span></div>`).join("");
+    return `<div class="dwrap"><div class="dside">
+      <div class="dhalf"><div class="dhalf-head">修改前 · HEAD</div>${left}</div>
+      <div class="dhalf"><div class="dhalf-head">修改后 · 工作区</div>${right}</div>
+    </div></div>`;
+  }
+  return `<div class="dwrap">${d.map(x=>{
+    const cls = x[0]==="add"?"add":x[0]==="del"?"del":"";
+    const mark = x[0]==="add"?"+":x[0]==="del"?"−":" ";
+    return `<div class="dline ${cls}"><span class="dl">${mark}${x[1]||""}</span><span class="dt">${esc(x[2])}</span></div>`;
+  }).join("")}</div>`;
+}
+
+/* ================= 文件面板 ================= */
+function renderFilesPane(){
+  const r = findRepo().repo;
+  const items = changesOf(r.id);
+  if (!st.file || !fileList(r.id).some(f=>f.name===st.file)) st.file = fileList(r.id)[0]?.name || null;
+  const sel = st.file;
+
+  const tree = items.map(c=>{
+    if (c.dir){
+      return `<div class="frow dir" style="--ind:${c.depth*12}px">
+        <svg class="fic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h5l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H3z"/></svg>
+        <span class="fname">${esc(c.name)}</span><span></span></div>`;
+    }
+    return `<div class="frow ${sel===c.name?"sel":""}" data-file="${esc(c.name)}" style="--ind:${c.depth*12}px">
+      <svg class="fic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h8l4 4v14H6z"/></svg>
+      <span class="fname">${esc(c.name)}</span><span class="st ${c.st}">${c.st}</span></div>`;
+  }).join("");
+
+  const cur = items.find(x=>!x.dir && x.name===sel);
+  const body = st.fileView==="diff" ? renderDiff() : renderEditBody();
+  const dirty = isDirty(sel);
+
+  return `<div class="fview">
+    <div class="ftree">
+      <div class="ftree-head">变更 · ${fileList(r.id).length}</div>
+      <div class="ftree-body">${tree}</div>
+    </div>
+    <div class="fmain">
+      <div class="fbar">
+        <span class="fpath">${esc(sel||"—")}</span>
+        ${cur?`<span class="stat-add">+${cur.add}</span><span class="stat-del">−${cur.del}</span>`:""}
+        <div class="seg" id="viewSeg">
+          <button data-view="edit" class="${st.fileView==="edit"?"on":""}">编辑</button>
+          <button data-view="diff" class="${st.fileView==="diff"?"on":""}">Diff</button>
+        </div>
+        <div class="seg" id="diffSeg" style="${st.fileView==="diff"?"":"display:none"}">
+          <button data-diff="inline" class="${st.diffMode==="inline"?"on":""}">上下</button>
+          <button data-diff="side" class="${st.diffMode==="side"?"on":""}">左右</button>
+        </div>
+        <span class="savebadge ${dirty?"":"on"}" id="saveBadge"><span class="dt"></span>${dirty?"有未保存改动":"已保存"}</span>
+        <span class="usagebadge" id="usageBadge" style="display:none"></span>
+        <span class="savebadge" id="errBadge">✓ 无问题</span>
+        <button class="btn sm" id="blameBtn">Blame ${st.blame?"开":"关"}</button>
+        <button class="btn sm" id="fmtBtn">格式化</button>
+        <button class="btn sm" id="mdBtn">预览</button>
+        <button class="btn sm primary" id="saveBtn">保存</button>
+      </div>
+      ${body}
+    </div>
+  </div>`;
+}
+
+/* ================= PR ================= */
+function renderPrPane(){
+  const r = findRepo().repo;
+  const list = PRS[r.id] || PRS.default;
+  if (!list.length) return `<div class="empty">该仓库暂无 Pull Request</div>`;
+  return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <span class="mono">共 ${list.length} 个 PR</span><span class="spacer"></span>
+      <button class="btn sm" id="newPrBtn">+ 新建 PR</button></div>` +
+    list.map(pr=>`
+    <div class="pr">
+      <div class="prt"><span class="prn">#${pr.n}</span>${esc(pr.t)}
+        <span class="prstate ${pr.state}">${pr.state==="open"?"待合并":pr.state==="merged"?"已合并":"草稿"}</span></div>
+      <div class="prs">${esc(pr.author)} · <span class="mono">${esc(pr.from)} → ${esc(pr.to)}</span> · ${pr.files} 文件 · CI ${pr.ci}</div>
+      <div class="pra">
+        <button class="btn tiny" data-pr-view="${pr.n}">查看</button>
+        <button class="btn tiny" data-pr-files="${pr.n}">变更文件</button>
+        ${pr.state==="open"?`<button class="btn tiny primary" data-pr-merge="${pr.n}">合并</button>`:""}
+        <button class="btn tiny" data-pr-checkout="${pr.n}">检出</button>
+      </div>
+    </div>`).join("");
+}
+
+/* ================= 详情 ================= */
+function renderDetail(){
+  const f = findRepo(); if (!f) return;
+  const { plat:p, acct:a, repo:r } = f;
+
+  $("dName").textContent = r.name;
+  $("dPlat").textContent = p.name;
+  $("dProto").textContent = /^(git@|ssh:)/.test(r.url) ? "SSH" : "HTTPS";
+  $("dBranch").textContent = r.branch;
+  $("dPath").textContent = r.path;
+  $("dUrl").textContent = r.url;
+  $("branchName").textContent = r.branch;
+  $("starN").textContent = r.stars;
+  $("forkN").textContent = r.forks;
+  $("watchN").textContent = r.watch;
+  $("termHint").textContent = `git-switch · ${r.path}`;
+  $("chgCnt").textContent = fileList(r.id).length;
+  $("prCnt").textContent = (PRS[r.id]||[]).filter(x=>x.state!=="merged").length;
+
+  $("sPlatDot").textContent = p.letter;
+  $("sPlatDot").className = "dot " + p.cls;
+  $("sPlatName").textContent = p.name;
+  $("sAcctAv").textContent = a.short;
+  $("sAcctName").textContent = a.label;
+  document.querySelectorAll("#authSeg button").forEach(b=>b.classList.toggle("on", b.dataset.auth===a.auth));
+
+  $("acctMenu").innerHTML = `<div class="menu-head">${esc(p.name)} 下可用于本项目的身份 · ${p.accounts.length}</div>` +
+    p.accounts.map(aa=>{
+      const used = reposOfAcct(aa.id).length;
+      return `
+      <div class="opt ${aa.id===a.id?"sel":""}" data-a="${aa.id}">
+        <span class="avatar">${esc(aa.short)}</span>
+        <span>${esc(aa.label)}<div class="meta">${esc(aa.email)} · ${authLabel(aa.auth)}</div></span>
+        <span class="meta">${aa.id===a.id?"当前":(used?used+" 项目在用":"")}</span>
+      </div>`;}).join("") +
+    `<div class="menu-head" style="border-top:1px solid #2b3038;margin-top:4px;padding-top:6px" id="addAcctInMenu">+ 为本平台新增身份…</div>`;
+
+  document.querySelectorAll("#acctMenu .opt").forEach(el=>el.onclick=()=>{
+    closeMenus();
+    applyIdentity(r.id, el.dataset.a);
+  });
+  const am = $("addAcctInMenu"); if (am) am.onclick = ()=>{ closeMenus(); openAddAccount(st.plat); };
+
+  const pane = $("pane");
+  pane.classList.toggle("flush", st.tab==="files");
+
+  if (st.tab==="readme"){
+    pane.innerHTML = `<div class="readme">${README[r.id] || README.default}</div>`;
+  } else if (st.tab==="git"){
+    pane.innerHTML = renderGitPane();
+    pane.querySelectorAll(".grow").forEach(el=>el.onclick=()=>{
+      st.selCommit = el.dataset.commit;
+      const c = commitsOf(r.id).find(x=>x.h===st.selCommit);
+      termCmd(`git show --stat ${c.h}`);
+      termOut(`${c.h} ${c.msg} · ${c.au} · ${c.d}`);
+      c.refs.forEach(rf=>termOut(`ref: ${rf.t}`));
+      renderDetail();
+      openCommitModal(c);
+    });
+    pane.querySelectorAll(".bchip[data-branch]").forEach(el=>el.onclick=()=>{
+      const name = el.dataset.branch;
+      termCmd(`git checkout ${name}`);
+      termOut(`已检出 ${name}`, "ok");
+      flash(`已检出分支 ${name}`);
+    });
+  } else if (st.tab==="pr"){
+    pane.innerHTML = renderPrPane();
+    pane.querySelectorAll("[data-pr-merge]").forEach(b=>b.onclick=()=>{
+      const pr = (PRS[r.id]||[]).find(x=>x.n==b.dataset.prMerge);
+      pr.state = "merged";
+      termCmd(`gh pr merge ${pr.n} --squash --delete-branch`);
+      termOut(`已合并 #${pr.n} ${pr.t} → ${pr.to}`, "ok");
+      renderDetail(); flash(`已合并 #${pr.n}`);
+    });
+    pane.querySelectorAll("[data-pr-view]").forEach(b=>b.onclick=()=>{
+      const pr = (PRS[r.id]||[]).find(x=>x.n==b.dataset.prView);
+      openModal(`<h3>#${pr.n} ${esc(pr.t)}</h3>
+        <div class="sub">${esc(pr.author)} · ${esc(pr.from)} → ${esc(pr.to)} · ${pr.files} 文件 · CI ${pr.ci}</div>
+        <div class="note">状态：${pr.state==="open"?"待合并":pr.state==="merged"?"已合并":"草稿"}<br>
+        src/main/java/com/example/gateway/MqttBrokerConfig.java <span class="stat-add">+6</span> <span class="stat-del">−2</span><br>
+        摘要：心跳超时 30s → 60s，修复离线重连未重置。</div>
+        <div class="mfoot"><button class="btn" data-close>关闭</button></div>`);
+    });
+    pane.querySelectorAll("[data-pr-files]").forEach(b=>b.onclick=()=>{
+      st.tab="files"; st.file="MqttBrokerConfig.java";
+      document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on", x.dataset.tab==="files"));
+      renderDetail();
+    });
+    pane.querySelectorAll("[data-pr-checkout]").forEach(b=>b.onclick=()=>{
+      const pr = (PRS[r.id]||[]).find(x=>x.n==b.dataset.prCheckout);
+      termCmd(`gh pr checkout ${pr.n}`); termOut(`已检出 ${pr.from}`, "ok"); flash(`已检出 ${pr.from}`);
+    });
+    const np = $("newPrBtn"); if (np) np.onclick = ()=>flash("新建 PR：选择源分支与目标分支…");
+  } else {
+    pane.innerHTML = renderFilesPane();
+    pane.querySelectorAll(".frow[data-file]").forEach(el=>el.onclick=()=>{
+      st.file = el.dataset.file; st.usage=null; renderDetail();
+    });
+    pane.querySelectorAll("#viewSeg button").forEach(b=>b.onclick=()=>{ st.fileView=b.dataset.view; renderDetail(); });
+    pane.querySelectorAll("#diffSeg button").forEach(b=>b.onclick=()=>{
+      st.diffMode = b.dataset.diff; renderDetail();
+      termCmd(`git diff ${st.file}`);
+      termOut(`diff 视图：${st.diffMode==="side"?"左右对比":"上下对比"}`, "ok");
+    });
+    $("blameBtn").onclick = ()=>{ st.blame=!st.blame; renderDetail();
+      termCmd(`git blame --line-porcelain ${st.file} | head -20`); termOut(`Blame ${st.blame?"开":"关"}`, "ok"); };
+    $("fmtBtn").onclick = ()=>{
+      if (langOf(st.file)==="java"){
+        setText(st.file, formatJava(textOf(st.file)));
+        renderDetail(); termCmd(`java -jar google-java-format.jar -i ${st.file}`);
+        termOut("已格式化并对齐缩进", "ok"); flash("已格式化");
+      } else flash("该文件类型暂不支持格式化");
+    };
+    $("mdBtn").onclick = ()=>{
+      if (langOf(st.file)!=="md") return flash("仅 Markdown 支持预览");
+      openModal(`<h3>预览 ${esc(st.file)}</h3><div class="sub">渲染自工作区内容</div>
+        <div class="readme"><h3>iot-gateway</h3>
+          <p>物联网设备接入网关，基于 Spring Boot 3 + MQTT。</p>
+          <h3>快速开始</h3><pre>mvn -pl iot-gateway spring-boot:run</pre>
+          <h3>模块</h3><ul><li><code>device-auth</code> 设备鉴权</li><li><code>mqtt-broker</code> 接入层</li></ul></div>
+        <div class="mfoot"><button class="btn" data-close>关闭</button></div>`);
+    };
+    $("saveBtn").onclick = ()=>saveNow(true);
+    attachEditor();
+    const bad = checkSyntax(textOf(st.file), langOf(st.file));
+    $("probCnt").textContent = bad.length;
+    const eb = $("errBadge");
+    if (eb && bad.length){
+      eb.className = "errbadge"; eb.textContent = `⚠ ${bad.length} 个问题`;
+      eb.onclick = ()=>{
+        $("term").classList.remove("collapsed");
+        st.termTab = "problems";
+        document.querySelectorAll(".term-tab").forEach(x=>x.classList.toggle("on", x.dataset.tt==="problems"));
+        $("termBody").innerHTML = bad.map(e=>`<div class="er">第 ${e.line+1} 行：${esc(e.msg)}</div>`).join("");
+      };
+    }
+  }
+
+  $("warnline").innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M12 3 2.5 20h19L12 3z"/><path d="M12 9v5"/></svg>
+    <span>写入范围：仅 <span class="mono">${esc(r.path)}/.git/config</span>，不改动 <span class="mono">~/.gitconfig</span>。当前身份 <span class="mono">${esc(a.name)} &lt;${esc(a.email)}&gt;</span> · ${authLabel(a.auth)}。</span>`;
+}
+
+function renderAll(){ renderTree(); renderProjects(); renderDetail(); }
+
+/* ================= 提交详情弹窗 ================= */
+function openCommitModal(c){
+  openModal(`<h3>${esc(c.msg)}</h3>
+    <div class="sub"><span class="mono">${esc(c.h)}</span> · ${esc(c.au)} · ${esc(c.d)}${c.parents.length?` · 父 ${c.parents.map(p=>`<span class="mono">${esc(p.slice(0,7))}</span>`).join(" ")}`:""}</div>
+    ${c.parents.length>1?'<div class="note" style="margin-bottom:10px">这是一个合并提交，包含多个父提交。</div>':""}
+    ${c.refs.length?`<div class="mf"><label>引用</label><div>${c.refs.map(rf=>`<span class="ref ${rf.k}" style="margin-right:5px">${esc(rf.t)}</span>`).join("")}</div></div>`:""}
+    <div class="mf"><label>变更文件</label>
+      <div class="note">src/main/java/com/example/gateway/MqttBrokerConfig.java <span class="stat-add">+6</span> <span class="stat-del">−2</span><br>
+      src/test/java/com/example/gateway/GatewayTest.java <span class="stat-add">+12</span> <span class="stat-del">−0</span></div></div>
+    <div class="mfoot">
+      <button class="btn" data-close>关闭</button>
+      <button class="btn" id="ckOut">检出此提交</button>
+      <button class="btn primary" id="ckCherry">Cherry-pick</button>
+    </div>`);
+  const co = $("ckOut"), cp = $("ckCherry");
+  if (co) co.onclick = ()=>{ termCmd(`git checkout ${c.h}`); termOut(`已检出 ${c.h}`, "ok"); closeModal(); flash(`已检出 ${c.h}`); };
+  if (cp) cp.onclick = ()=>{ termCmd(`git cherry-pick ${c.h}`); termOut("Cherry-pick 完成", "ok"); closeModal(); flash("Cherry-pick 完成"); };
+}
+
+/* ================= 弹窗基础 ================= */
+function openModal(html){
+  $("modal").innerHTML = html;
+  $("overlay").classList.add("show");
+  $("modal").querySelectorAll("[data-close]").forEach(b=>b.onclick=closeModal);
+}
+function closeModal(){ $("overlay").classList.remove("show"); }
+$("overlay").onclick = (e)=>{ if (e.target.id==="overlay") closeModal(); };
+
+/* ================= 添加账号 ================= */
+function openAddAccount(platId){
+  const auths = [
+    { id:"ssh", ic:"🔑", t:"SSH 密钥", d:"id_ed25519" },
+    { id:"token", ic:"🎫", t:"令牌", d:"PAT / OAuth" },
+    { id:"password", ic:"🔒", t:"账号密码", d:"HTTPS 帐号" },
+    { id:"file", ic:"📄", t:"凭据文件", d:".netrc" },
+  ];
+  let chosen = "ssh";
+  openModal(`<h3>添加平台及账号</h3>
+    <div class="sub">一个平台可挂多个账号，仓库与账号独立绑定</div>
+    <div class="mf"><label>平台</label>
+      <select class="msel" id="mPlat">
+        ${DB.map(p=>`<option value="${p.id}" ${p.id===platId?"selected":""}>${esc(p.name)} · ${esc(p.host)}</option>`).join("")}
+        <option value="__new">+ 自定义平台（填 host）</option>
+      </select></div>
+    <div class="mf" id="newPlatWrap" style="display:none"><label>平台地址</label>
+      <input class="min" id="mHost" placeholder="gitlab.company.com" /></div>
+    <div class="mrow">
+      <div class="mf"><label>账号标签</label><input class="min" id="mLabel" placeholder="张鑫宇 · 公司" /></div>
+      <div class="mf"><label>邮箱（user.email）</label><input class="min" id="mEmail" placeholder="zhangxinyu@company.com" /></div>
+    </div>
+    <div class="mf"><label>用户名（user.name）</label><input class="min" id="mName" placeholder="张鑫宇" /></div>
+    <div class="mf"><label>认证方式</label>
+      <div class="authgrid" id="authGrid">
+        ${auths.map(a=>`<div class="authcard ${a.id==="ssh"?"on":""}" data-auth="${a.id}">
+          <div class="ai">${a.ic}</div><div class="at">${a.t}</div><div class="ad">${a.d}</div></div>`).join("")}
+      </div></div>
+    <div id="authFields"></div>
+    <div class="note">密码与令牌存入系统钥匙串（macOS Keychain / Windows Credential Manager / Linux Secret Service），配置文件只保存引用，不回显。</div>
+    <div class="mfoot"><button class="btn" data-close>取消</button><button class="btn primary" id="mSave">保存账号</button></div>`);
+
+  const fieldsFor = (a)=>{
+    if (a==="ssh") return `<div class="mrow">
+      <div class="mf"><label>私钥路径</label><input class="min" id="mKey" value="~/.ssh/id_ed25519" /></div>
+      <div class="mf"><label>私钥口令</label><input class="min" type="password" placeholder="可选，存钥匙串" /></div></div>`;
+    if (a==="token") return `<div class="mf"><label>访问令牌</label><input class="min" type="password" placeholder="ghp_… / glpat-…" /></div>
+      <div class="mrow"><div class="mf"><label>令牌类型</label><select class="msel"><option>Personal Access Token</option><option>OAuth</option><option>Deploy Token</option></select></div>
+      <div class="mf"><label>过期时间</label><input class="min" placeholder="2027-01-01" /></div></div>`;
+    if (a==="password") return `<div class="mrow">
+      <div class="mf"><label>用户名</label><input class="min" placeholder="gitlab 用户名" /></div>
+      <div class="mf"><label>密码</label><input class="min" type="password" /></div></div>`;
+    return `<div class="mf"><label>凭据文件路径</label><input class="min" value="~/.netrc" /></div>
+      <div class="mf"><label>credential.helper</label><select class="msel"><option>store</option><option>cache</option><option>manager</option></select></div>`;
+  };
+  const draw = ()=>{ $("authFields").innerHTML = fieldsFor(chosen); };
+  draw();
+  $("authGrid").querySelectorAll(".authcard").forEach(el=>el.onclick=()=>{
+    chosen = el.dataset.auth;
+    $("authGrid").querySelectorAll(".authcard").forEach(x=>x.classList.toggle("on", x===el));
+    draw();
+  });
+  $("mPlat").onchange = ()=>{ $("newPlatWrap").style.display = $("mPlat").value==="__new" ? "" : "none"; };
+  $("mSave").onclick = ()=>{
+    const platVal = $("mPlat").value;
+    const label = $("mLabel").value.trim() || "新账号";
+    const email = $("mEmail").value.trim() || "user@example.com";
+    const name = $("mName").value.trim() || label.split(" ")[0];
+    let pid = platVal;
+    if (platVal==="__new"){
+      const host = ($("mHost").value||"").trim() || "example.com";
+      pid = "p"+Date.now();
+      DB.push({ id:pid, name:host, letter:host[0].toUpperCase(), cls:"corp", host, accounts:[] });
+      st.openPlats.push(pid);
+    }
+    const p = findPlat(pid);
+    const key = chosen==="ssh" ? ($("mKey")?.value||"~/.ssh/id_ed25519") : "";
+    p.accounts.push({ id:"a"+Date.now(), label, short:label[0]||"A", name, email, auth:chosen, key });
+    closeModal();
+    st.plat = pid;
+    if (!findRepo()) { const first = reposOfPlat(pid)[0]; st.repo = first ? first.id : ""; }
+    renderAll();
+    termCmd(`# 将 ${label} 的${authLabel(chosen)}写入系统钥匙串`);
+    termOut(`账号已添加到 ${p.name}`, "ok");
+    flash(`已添加账号：${label}（${authLabel(chosen)}）`);
+  };
+}
+
+/* ================= 设置 ================= */
+function openSettings(){
+  openModal(`<h3>设置</h3>
+    <div class="sub">仅作用于 GitSwitch，不修改 git 全局配置</div>
+    <div class="switch"><div><div class="sl">自动保存</div><div class="sd">编辑后 700ms 自动写入并暂存</div></div>
+      <div class="track ${st.autoSave?"on":""}" id="swAuto"></div></div>
+    <div class="switch"><div><div class="sl">保存时自动格式化</div><div class="sd">按语言对齐缩进（当前支持 Java）</div></div>
+      <div class="track ${st.formatOnSave?"on":""}" id="swFmt"></div></div>
+    <div class="switch"><div><div class="sl">显示 Blame 行内标注</div><div class="sd">每行显示提交者与提交号</div></div>
+      <div class="track ${st.blame?"on":""}" id="swBlame"></div></div>
+    <div class="switch"><div><div class="sl">凭证存储</div><div class="sd">系统钥匙串，配置文件只存引用</div></div>
+      <span class="mono">Keychain</span></div>
+    <div class="switch"><div><div class="sl">全局身份（只读）</div><div class="sd">张鑫宇 &lt;429092941@qq.com&gt;，本工具不改写</div></div>
+      <span class="mono">~/.gitconfig</span></div>
+    <div class="mfoot"><button class="btn" data-close>关闭</button></div>`);
+  const bind = (id, key, after)=>{
+    $(id).onclick = ()=>{ st[key] = !st[key]; $(id).classList.toggle("on", st[key]); if (after) after(); };
+  };
+  bind("swAuto","autoSave");
+  bind("swFmt","formatOnSave");
+  bind("swBlame","blame", ()=>{ closeModal(); renderDetail(); });
+}
+
+/* ================= 交互 ================= */
+function closeMenus(){
+  document.querySelectorAll(".menu").forEach(m=>m.classList.remove("show"));
+  document.querySelectorAll(".sel-t").forEach(t=>t.classList.remove("open"));
+}
+document.querySelectorAll(".sel-t.click").forEach(t=>{
+  t.onclick = (e)=>{
+    e.stopPropagation();
+    const menu = $(t.dataset.menu), was = menu.classList.contains("show");
+    closeMenus();
+    if (!was){ menu.classList.add("show"); t.classList.add("open"); }
+  };
+});
+document.body.onclick = ()=>closeMenus();
+$("platLocked").onclick = ()=>flash("平台由仓库远程地址决定，不可切换");
+$("settingsBtn").onclick = ()=>openSettings();
+$("addAcctBtn").onclick = ()=>openAddAccount(st.plat);
+$("shareBtn").onclick = ()=>{
+  const r = findRepo().repo;
+  if (navigator.clipboard) navigator.clipboard.writeText(r.url).catch(()=>{});
+  flash(`已复制仓库地址：${r.url}`);
+};
+$("scanBtn").onclick = ()=>{ termCmd("git-switch scan ~/WorkSpace --depth 3"); termOut("发现 6 个仓库，已按平台归类", "ok"); flash("扫描完成：6 个仓库"); };
+
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
+  document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on", x===t));
+  st.tab = t.dataset.tab; renderDetail();
+});
+
+$("authSeg").onclick = (e)=>{
+  if (!e.target.dataset.auth) return;
+  const f = findRepo(); f.acct.auth = e.target.dataset.auth;
+  renderAll();
+  termCmd(f.acct.auth==="ssh" ? `git config --local core.sshCommand "ssh -i ${f.acct.key}"` : `git config --local credential.helper osxkeychain`);
+  termOut(`认证方式：${authLabel(f.acct.auth)}`, "ok");
+  flash(`认证方式：${authLabel(f.acct.auth)}`);
+};
+
+document.querySelectorAll("[data-act]").forEach(el=>el.onclick=()=>{
+  const act = el.dataset.act, f = findRepo(), n = fileList(f.repo.id).length;
+  const map = {
+    fetch:["git fetch --all --prune","远程分支已更新"],
+    pull:[`git pull --rebase origin ${f.repo.branch}`,`已从 origin/${f.repo.branch} 拉取`],
+    push:[`git push origin ${f.repo.branch}`,`已推送 ${f.repo.ahead||0} 个提交`],
+    commit:['git commit -m "..."',`已提交 ${n} 个文件变更`],
+    stash:["git stash push -u","工作区已贮藏"],
+    branch:["git branch -a",branchesOf(f.repo.id).local.map(b=>`${b.cur?"* ":"  "}${b.name}`).join("\n")],
+    merge:["git merge --no-ff origin/develop","合并完成，无冲突"],
+    rebase:[`git rebase -i origin/${f.repo.branch}`,"变基完成"],
+    reset:["git reset --mixed HEAD~1","已回退到 HEAD~1"],
+    tag:["git tag --list",branchesOf(f.repo.id).tags.join("\n")||"(无标签)"],
+    log:["git log --oneline --graph -10",commitsOf(f.repo.id).slice(0,10).map(c=>`* ${c.h} ${c.msg}`).join("\n")],
+    pr:["gh pr list --state open",`共 ${(PRS[f.repo.id]||[]).filter(x=>x.state!=="merged").length} 个待合并 PR`],
+    test:[`ssh -T git@${findPlat(f.plat.id).host}`,"认证通过 · 连接正常"],
+    apply:[`git config --local user.name "${f.acct.name}"\ngit config --local user.email "${f.acct.email}"`,`已写入 ${f.repo.path}/.git/config`],
+  };
+  const [cmd,out] = map[act] || ["git status","ok"];
+  termCmd(cmd.split("\n")[0]);
+  out.split("\n").forEach(l=>termOut(l));
+  if (act==="apply") flash(`已写入 ${f.repo.path}/.git/config`);
+  else if (act==="test") flash("认证可用 · 已通过");
+  else if (act==="pr"){ st.tab="pr"; document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on", x.dataset.tab==="pr")); renderDetail(); flash("PR 列表"); }
+  else flash(`${el.textContent.trim()} 完成`);
+});
+
+$("branchBtn").onclick = ()=>{
+  const f = findRepo(), br = branchesOf(f.repo.id);
+  termCmd("git branch -a");
+  termOut(br.local.map(b=>`${b.cur?"* ":"  "}${b.name}`).join("\n"));
+  termOut(br.remote.map(b=>`  remotes/${b.name}`).join("\n"));
+  flash("分支列表见终端");
+};
+/* ================= 克隆 ================= */
+/* 远程仓库列表缓存：真实实现由平台 API 拉取 */
+const REMOTE_CACHE = {};
+
+const MOCK_REMOTE = {
+  "gh-me":[
+    { name:"iot-gateway",        full:"zhangxinyu/iot-gateway",        desc:"物联网设备接入网关", stars:128, lang:"Java",    cloned:true  },
+    { name:"spring-boot-demo",   full:"zhangxinyu/spring-boot-demo",   desc:"Spring Boot 3 脚手架", stars:12,  lang:"Java",    cloned:true  },
+    { name:"mqtt-gateway-tools", full:"zhangxinyu/mqtt-gateway-tools", desc:"MQTT 接入调试工具集", stars:34,  lang:"Kotlin",  cloned:false },
+    { name:"tenant-starter",     full:"zhangxinyu/tenant-starter",     desc:"多租户 Spring Starter", stars:7,   lang:"Java",    cloned:false },
+    { name:"notes",              full:"zhangxinyu/notes",              desc:"零散笔记", stars:1, lang:"Markdown", cloned:false },
+  ],
+  "gh-alt":[
+    { name:"ruoyi-plus",         full:"zx-pro/ruoyi-plus",             desc:"RuoYi-Vue-Plus 二开", stars:892, lang:"Java",   cloned:true  },
+    { name:"mcp-server-demo",    full:"zx-pro/mcp-server-demo",        desc:"MCP 服务示例", stars:45, lang:"TypeScript", cloned:false },
+  ],
+  "corp-me":[
+    { name:"erp-backend",        full:"erp/backend",                   desc:"ERP 后端", stars:0, lang:"Java",   cloned:true  },
+    { name:"erp-frontend",       full:"erp/frontend",                  desc:"ERP 前端", stars:0, lang:"Vue",    cloned:true  },
+    { name:"erp-report",         full:"erp/report",                    desc:"报表服务", stars:0, lang:"Java",   cloned:false },
+  ],
+  "corp-bot":[
+    { name:"ci-templates",       full:"devops/ci-templates",           desc:"CI 模板库", stars:0, lang:"YAML", cloned:false },
+  ],
+  "gitee-a":[
+    { name:"mqtt-bridge",        full:"3237138707/mqtt-bridge",        desc:"MQTT 桥接", stars:6, lang:"Go", cloned:true  },
+    { name:"ruoyi-vue",          full:"3237138707/ruoyi-vue",          desc:"RuoYi 学习", stars:2, lang:"Java", cloned:false },
+  ],
+};
+
+function parseRemote(url){
+  const s = (url||"").trim();
+  if (!s) return null;
+  let host = "", path = "";
+  const scp = s.match(/^(?:[^@\/]+@)?([^:\/]+):(.+)$/);
+  const urlLike = s.match(/^[a-z][a-z0-9+.-]*:\/\/([^\/]+)\/(.+)$/i);
+  if (urlLike){
+    host = urlLike[1].replace(/^[^@]*@/, "").split(":")[0];
+    path = urlLike[2];
+  } else if (scp && !/^[a-z][a-z0-9+.-]*:\/\//i.test(s)){
+    host = scp[1];
+    path = scp[2];
+  } else return null;
+  path = path.replace(/\.git$/i, "").replace(/^\/+|\/+$/g, "");
+  if (!host || !path) return null;
+  const seg = path.split("/");
+  return { host: host.toLowerCase(), owner: seg.slice(0,-1).join("/"), name: seg[seg.length-1], path };
+}
+
+const platByHost = (host)=>{
+  if (!host) return null;
+  return DB.find(p => host === p.host)
+      || DB.find(p => host.endsWith("." + p.host))
+      || DB.find(p => p.host.endsWith("." + host))
+      || null;
+};
+
+const isCloned = (platId, name)=>REPOS.some(r=>r.plat===platId && r.name===name);
+
+function openClone(){
+  const cur = findRepo();
+  let pid = cur ? cur.repo.plat : (st.plat || "github");
+  let aid = cur ? cur.repo.accountId : findPlat(pid).accounts[0].id;
+
+  const platOptions = ()=> DB.map(p=>`<option value="${p.id}" ${p.id===pid?"selected":""}>${esc(p.name)} · ${esc(p.host)}</option>`).join("");
+  const acctOptions = ()=> findPlat(pid).accounts.map(a=>
+    `<option value="${a.id}" ${a.id===aid?"selected":""}>${esc(a.label)} · ${authLabel(a.auth)}</option>`).join("");
+
+  openModal(`<h3>克隆仓库</h3>
+    <div class="sub">拉取到本地并绑定到指定的 git 身份，之后该项目的提交、推送都使用这个身份</div>
+
+    <div class="mf"><label>仓库地址</label>
+      <input class="min" id="cUrl" placeholder="git@github.com:owner/repo.git 或 https://github.com/owner/repo.git" />
+      <div class="mhint" id="cHint">支持 SSH 与 HTTPS 两种写法</div>
+    </div>
+
+    <div class="mrow">
+      <div class="mf"><label>克隆到</label><input class="min" id="cDir" value="~/WorkSpace" /></div>
+      <div class="mf"><label>目录名</label><input class="min" id="cName" placeholder="自动取仓库名" /></div>
+    </div>
+
+    <div class="mrow">
+      <div class="mf"><label>平台</label><select class="msel" id="cPlat">${platOptions()}</select></div>
+      <div class="mf"><label>使用的身份</label><select class="msel" id="cAcct">${acctOptions()}</select></div>
+    </div>
+
+    <div class="mf">
+      <div class="rowflex">
+        <button class="btn sm" id="cFetch">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M21 12a9 9 0 1 1-3-6.7M21 3v6h-6"/></svg>
+          获取该身份参与的项目
+        </button>
+        <span class="mono" id="cFetchHint"></span>
+      </div>
+      <div class="rlist" id="cList"></div>
+    </div>
+
+    <div class="note">认证方式：SSH 使用该身份的密钥路径，HTTPS 使用钥匙串里保存的令牌。克隆完成后立即写入该项目的 <b>.git/config</b>。</div>
+
+    <div class="mfoot">
+      <button class="btn" data-close>取消</button>
+      <button class="btn primary" id="cGo">克隆</button>
+    </div>`);
+
+  const urlin = $("cUrl"), hintEl = $("cHint"), nameEl = $("cName"), dirEl = $("cDir");
+  const platEl = $("cPlat"), acctEl = $("cAcct"), listEl = $("cList"), fetchHint = $("cFetchHint");
+
+  const repaintAccts = ()=>{
+    const p = findPlat(pid);
+    if (!p.accounts.some(a=>a.id===aid)) aid = p.accounts[0]?.id;
+    acctEl.innerHTML = acctOptions();
+  };
+
+  const onUrl = ()=>{
+    const info = parseRemote(urlin.value);
+    if (!urlin.value.trim()){ hintEl.className = "mhint"; hintEl.textContent = "支持 SSH 与 HTTPS 两种写法"; return; }
+    if (!info){ hintEl.className = "mhint warn"; hintEl.textContent = "无法解析，请检查格式"; return; }
+    const p = platByHost(info.host);
+    if (p){
+      pid = p.id; platEl.value = p.id; repaintAccts();
+      hintEl.className = "mhint ok";
+      hintEl.textContent = `识别到 ${p.name} · ${info.owner}/${info.name}`;
+    } else {
+      hintEl.className = "mhint warn";
+      hintEl.textContent = `未匹配到已配置平台（host: ${info.host}），请手动选择`;
+    }
+    if (!nameEl.value.trim() || nameEl.dataset.auto === "1"){
+      nameEl.value = info.name; nameEl.dataset.auto = "1";
+    }
+  };
+  urlin.addEventListener("input", onUrl);
+  nameEl.addEventListener("input", ()=>{ nameEl.dataset.auto = "0"; });
+
+  platEl.addEventListener("change", ()=>{ pid = platEl.value; repaintAccts(); renderList(true); });
+  acctEl.addEventListener("change", ()=>{ aid = acctEl.value; renderList(true); });
+
+  function renderList(clear){
+    const list = REMOTE_CACHE[aid];
+    if (clear || !list){ listEl.innerHTML = ""; fetchHint.textContent = ""; return; }
+    const acct = findAcct(pid, aid);
+    const p = findPlat(pid);
+    fetchHint.textContent = `${acct.label} · ${list.length} 个仓库`;
+    listEl.innerHTML = list.map(r=>{
+      const done = isCloned(p.id, r.name);
+      return `<div class="ritem ${done?"cloned":""}" data-full="${esc(r.full)}" data-name="${esc(r.name)}">
+        <div>
+          <div class="rn">${esc(r.full)} ${done?'<span class="chip ok">已在本机</span>':""}</div>
+          <div class="rd">${esc(r.desc)}</div>
+        </div>
+        <div class="rmeta">★ ${r.stars} · ${esc(r.lang)}</div>
+      </div>`;
+    }).join("");
+    listEl.querySelectorAll(".ritem").forEach(el=>el.onclick = ()=>{
+      if (el.classList.contains("cloned")) return;
+      const name = el.dataset.name, full = el.dataset.full;
+      const p2 = findPlat(pid);
+      const proto = (findAcct(pid, aid).auth === "ssh") ? "ssh" : "https";
+      urlin.value = proto === "ssh"
+        ? `git@${p2.host}:${full}.git`
+        : `https://${p2.host}/${full}.git`;
+      nameEl.value = name; nameEl.dataset.auto = "1";
+      onUrl();
+      flash(`已选择 ${full}`);
+    });
+  }
+
+  $("cFetch").onclick = ()=>{
+    fetchHint.textContent = "正在通过平台 API 拉取…";
+    setTimeout(()=>{
+      REMOTE_CACHE[aid] = MOCK_REMOTE[aid] || [];
+      renderList();
+      const acct = findAcct(pid, aid);
+      termCmd(`# 使用 ${acct.label} 的${authLabel(acct.auth)}调用 ${findPlat(pid).name} API 列出参与的项目`);
+      termOut(`GET /user/repos?affiliation=owner,collaborator,organization_member`, "out");
+      termOut(`返回 ${(REMOTE_CACHE[aid]||[]).length} 个仓库`, "ok");
+    }, 400);
+  };
+
+  $("cGo").onclick = ()=>{
+    const info = parseRemote(urlin.value);
+    if (!info){ flash("请填写有效的仓库地址"); return; }
+    const p = platByHost(info.host) || findPlat(pid);
+    const name = (nameEl.value.trim() || info.name).replace(/[\/\\]/g, "");
+    if (!name){ flash("目录名不能为空"); return; }
+    const dir = (dirEl.value.trim() || "~").replace(/\/+$/,"");
+    if (isCloned(p.id, name)) { flash(`${name} 已存在于本机`); return; }
+
+    const repo = {
+      id: "r" + Date.now(), plat: p.id, accountId: aid,
+      name, path: `${dir}/${name}`, url: urlin.value.trim(),
+      branch: "main", ahead: 0, behind: 0, stars: 0, forks: 0, watch: 0,
+    };
+    REPOS.push(repo);
+    closeModal();
+    st.plat = p.id; st.repo = repo.id; st.file = null; st.usage = null; st.selCommit = null;
+    renderAll();
+
+    const a = findAcct(p.id, aid);
+    termCmd(`git clone ${repo.url} ${repo.path}`);
+    termOut(`Cloning into '${name}'... done.`);
+    termOut(`git config --local user.name "${a.name}"`);
+    termOut(`git config --local user.email "${a.email}"`);
+    if (a.auth === "ssh") termOut(`git config --local core.sshCommand "ssh -i ${a.key}"`);
+    else termOut(`git config --local credential.helper ${credHelper()}`);
+    termOut(`已克隆并绑定身份：${a.label}`, "ok");
+    flash(`已克隆 ${name} → ${repo.path}`);
+  };
+}
+
+$("cloneBtn").onclick = ()=>openClone();
+
+document.querySelectorAll(".term-tab").forEach(t=>t.onclick=()=>{
+  document.querySelectorAll(".term-tab").forEach(x=>x.classList.toggle("on", x===t));
+  st.termTab = t.dataset.tt;
+  if (st.termTab==="problems"){
+    const bad = checkSyntax(textOf(st.file), langOf(st.file));
+    $("termBody").innerHTML = bad.length
+      ? bad.map(e=>`<div class="er">第 ${e.line+1} 行：${esc(e.msg)}</div>`).join("")
+      : `<div class="out">没有发现问题。</div>`;
+  } else if (st.termTab==="output"){
+    $("termBody").innerHTML = `<div class="out">[git] 已就绪\n[git] core.sshCommand 注入完成\n[git] credential.helper = osxkeychain\n[gh] 已登录：张鑫宇</div>`;
+  } else renderTerm();
+});
+$("termToggle").onclick = ()=>{
+  st.termOpen = !st.termOpen;
+  $("term").classList.toggle("collapsed", !st.termOpen);
+  $("termToggle").textContent = st.termOpen ? "收起" : "展开";
+};
+
+let tt;
+function flash(msg){
+  const el = $("toast");
+  $("toastText").textContent = msg;
+  el.style.color = "#46c88b";
+  el.classList.add("show");
+  clearTimeout(tt); tt = setTimeout(()=>el.classList.remove("show"), 2400);
+}
+
+/* ================= 启动 ================= */
+termCmd("git status -sb");
+termOut("## main...origin/main [ahead 2]");
+termOut(" M src/main/java/com/example/gateway/MqttBrokerConfig.java");
+termOut(" A src/main/java/com/example/gateway/DeviceAuthService.java");
+termOut(" M pom.xml");
+termOut("已加载 iot-gateway · 身份：张鑫宇 <429092941@qq.com>", "ok");
+renderAll();
+</script>
+</body>
+</html>

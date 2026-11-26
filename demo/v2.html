@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>GitSwitch 原型 v2</title>
+<style>
+  :root {
+    --bg: #14161a;
+    --cell: #1b1e24;
+    --cell-2: #21252d;
+    --line: #2b3038;
+    --text: #e6e8ec;
+    --muted: #8b93a1;
+    --dim: #656d7b;
+    --accent: #5b9dff;
+    --accent-soft: rgba(91, 157, 255, .14);
+    --ok: #46c88b;
+    --warn: #e0a33e;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 13px/1.5 -apple-system, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased; overflow: hidden;
+  }
+  .win { height: 100vh; display: grid; grid-template-rows: 46px 1fr; }
+
+  /* 顶栏 */
+  header {
+    display: flex; align-items: center; gap: 12px; padding: 0 14px;
+    border-bottom: 1px solid var(--line); background: linear-gradient(180deg, #1a1e25, #171a20);
+  }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 13.5px; }
+  .logo {
+    width: 21px; height: 21px; border-radius: 7px; display: grid; place-items: center;
+    background: linear-gradient(140deg, var(--accent), #7d6bff);
+    box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 6px 16px -6px var(--accent);
+  }
+  .logo svg { width: 12px; height: 12px; }
+  .search { position: relative; width: 260px; }
+  .search input {
+    width: 100%; height: 28px; padding: 0 9px 0 27px; border-radius: 8px;
+    background: #12151a; border: 1px solid var(--line); color: var(--text);
+    font-size: 12.5px; outline: none;
+  }
+  .search input:focus { border-color: #3d6ea8; box-shadow: 0 0 0 3px var(--accent-soft); }
+  .search svg { position: absolute; left: 8px; top: 8px; width: 13px; height: 13px; opacity: .45; }
+  .spacer { flex: 1; }
+  .btn {
+    height: 28px; padding: 0 11px; border-radius: 8px; cursor: pointer; font-size: 12.5px;
+    border: 1px solid var(--line); background: var(--cell-2); color: var(--text);
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn:hover { background: #272c35; }
+  .btn.primary { background: linear-gradient(180deg, #3f81e8, #2f6dd0); border-color: #2b62bd; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn.wide { width: 100%; justify-content: center; height: 32px; }
+
+  /* 三栏 */
+  .cols { display: grid; grid-template-columns: 268px 300px minmax(0, 1fr); min-height: 0; }
+  .col { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .platforms { border-right: 1px solid var(--line); background: linear-gradient(180deg, #171a20, #15181d); }
+  .projects { border-right: 1px solid var(--line); background: #16191f; }
+  .col-head {
+    height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 12px;
+    font-size: 10.5px; letter-spacing: .7px; text-transform: uppercase; color: var(--dim);
+    border-bottom: 1px solid var(--line); flex: none;
+  }
+  .col-head .n { color: var(--muted); }
+  .col-foot { border-top: 1px solid var(--line); padding: 9px; flex: none; }
+  .ghost {
+    width: 100%; height: 32px; border-radius: 8px; cursor: pointer; font-size: 12.5px;
+    background: transparent; border: 1px dashed #333a45; color: var(--muted);
+  }
+  .ghost:hover { border-color: #4a5464; color: var(--text); }
+  .scroll { overflow: auto; flex: 1; min-height: 0; padding: 6px 8px; }
+
+  /* 平台树 */
+  .plat-row {
+    display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; align-items: center;
+    padding: 7px 8px; border-radius: 8px; cursor: pointer; font-size: 12.5px;
+  }
+  .plat-row:hover { background: #1e232a; }
+  .plat-row.sel { background: #202833; }
+  .caret-s {
+    width: 0; height: 0; border-left: 3.5px solid transparent; border-right: 3.5px solid transparent;
+    border-top: 4.5px solid #7b8496; transition: transform .15s ease; margin-left: 4px;
+  }
+  .caret-s.open { transform: rotate(180deg); }
+  .badge { font-size: 10.5px; color: var(--dim); }
+  .acct-row {
+    display: grid; grid-template-columns: 20px 1fr auto; gap: 8px; align-items: center;
+    padding: 6px 8px 6px 14px; border-radius: 8px; cursor: pointer; font-size: 12.5px;
+  }
+  .acct-row:hover { background: #1e232a; }
+  .acct-row.sel { background: var(--accent-soft); box-shadow: inset 0 0 0 1px #31587f; }
+  .avatar {
+    width: 19px; height: 19px; border-radius: 50%; display: grid; place-items: center;
+    font-size: 9.5px; font-weight: 600; background: #2c3f5c; color: #b9d2f5; border: 1px solid #3b5d86;
+  }
+  .avatar.warn { background: #4a3a1c; color: #ecc27c; border-color: #6b5526; }
+  .acct-label { display: flex; flex-direction: column; min-width: 0; }
+  .acct-label small { font-size: 10px; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .proj-row {
+    display: grid; grid-template-columns: 14px 1fr; gap: 7px; align-items: center;
+    padding: 4px 8px 4px 30px; border-radius: 7px; cursor: pointer; font-size: 12px; color: var(--muted);
+  }
+  .proj-row:hover { background: #1e232a; color: var(--text); }
+  .proj-row.sel { background: #232c3a; color: #cfe0ff; }
+  .proj-row .sdot { width: 5px; height: 5px; border-radius: 50%; background: #454e5c; }
+  .proj-row.sel .sdot { background: var(--accent); }
+  .dot { width: 18px; height: 18px; border-radius: 5px; display: grid; place-items: center; font-size: 9.5px; font-weight: 700; }
+  .dot.gh { background: #2c3138; color: #fff; }
+  .dot.gl { background: #fc6d26; color: #fff; }
+  .dot.gitee { background: #c71d23; color: #fff; }
+  .dot.corp { background: #4a5f8a; color: #fff; }
+
+  /* 中栏项目卡片 */
+  .plist { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .pcard {
+    border: 1px solid var(--line); border-radius: 9px; padding: 9px 10px; cursor: pointer;
+    background: linear-gradient(180deg, #1c2027, #1a1e24);
+  }
+  .pcard:hover { border-color: #39414f; }
+  .pcard.sel { border-color: #3d6ea8; box-shadow: 0 0 0 2px var(--accent-soft); }
+  .pcard .pn { font-size: 12.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .pcard .pu { font-size: 10.5px; color: var(--dim); margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pcard .pmeta { display: flex; gap: 6px; margin-top: 7px; }
+  .chip { font-size: 10px; padding: 1px 6px; border-radius: 20px; background: #23282f; color: var(--muted); border: 1px solid var(--line); }
+  .chip.blue { background: var(--accent-soft); color: #9dc4ff; border-color: #31587f; }
+  .chip.ok { background: rgba(70,200,139,.1); color: #7fd7ac; border-color: rgba(70,200,139,.3); }
+
+  /* 右栏详情 */
+  .detail { background: #191c22; }
+  .dhead { padding: 11px 16px 0; flex: none; }
+  .dtitle { display: flex; align-items: center; gap: 8px; }
+  .dtitle h2 { font-size: 15px; margin: 0; font-weight: 600; }
+  .tag { font-size: 10.5px; padding: 1.5px 7px; border-radius: 20px; background: #23282f; color: var(--muted); border: 1px solid var(--line); }
+  .tag.blue { background: var(--accent-soft); color: #9dc4ff; border-color: #31587f; }
+  .mono { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: 11px; color: var(--dim); }
+  .dpath { margin: 4px 0 0; }
+  .switcher {
+    display: grid; grid-template-columns: 1fr 1.2fr auto; gap: 10px; align-items: end;
+    padding: 11px 16px; flex: none;
+  }
+  .label { font-size: 10px; color: var(--dim); letter-spacing: .5px; text-transform: uppercase; margin-bottom: 4px; }
+  .combo { position: relative; }
+  .sel-t {
+    height: 30px; width: 100%; padding: 0 9px; border-radius: 8px; cursor: pointer;
+    background: #12151a; border: 1px solid var(--line); color: var(--text);
+    font-size: 12.5px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  }
+  .sel-t:hover { border-color: #3a4250; }
+  .sel-t.open { border-color: #3d6ea8; box-shadow: 0 0 0 3px var(--accent-soft); }
+  .caret { width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #7b8496; transition: transform .15s; }
+  .sel-t.open .caret { transform: rotate(180deg); }
+  .menu {
+    position: absolute; z-index: 30; left: 0; right: 0; top: 35px; display: none;
+    background: #202530; border: 1px solid #333a48; border-radius: 9px; padding: 5px;
+    box-shadow: 0 18px 40px -12px #000;
+  }
+  .menu.show { display: block; animation: pop .12s ease-out; }
+  @keyframes pop { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+  .opt { display: grid; grid-template-columns: 20px 1fr auto; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 7px; cursor: pointer; font-size: 12.5px; }
+  .opt:hover { background: #2a3040; }
+  .opt.sel { background: var(--accent-soft); }
+  .opt .meta { font-size: 10px; color: var(--dim); }
+  .menu-head { font-size: 10px; color: var(--dim); padding: 3px 8px 5px; }
+  .seg { display: inline-flex; background: #12151a; border: 1px solid var(--line); border-radius: 8px; padding: 2px; }
+  .seg button { height: 24px; padding: 0 10px; border: 0; border-radius: 6px; cursor: pointer; background: transparent; color: var(--muted); font-size: 11.5px; }
+  .seg button.on { background: #2a3140; color: #dfe7f5; box-shadow: inset 0 0 0 1px #3a4453; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 2px; padding: 0 16px; border-bottom: 1px solid var(--line); flex: none; }
+  .tab {
+    padding: 8px 12px; font-size: 12.5px; color: var(--muted); cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.on { color: #cfe0ff; border-bottom-color: var(--accent); }
+  .pane { overflow: auto; flex: 1; min-height: 0; padding: 14px 16px 18px; }
+
+  /* README */
+  .readme h3 { font-size: 13px; margin: 16px 0 6px; color: #dbe4f3; }
+  .readme p { margin: 6px 0; color: #b9c1cf; font-size: 12.5px; line-height: 1.75; }
+  .readme code { font-family: "SF Mono", ui-monospace, monospace; font-size: 11.5px; background: #23282f; border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; color: #cbd6e6; }
+  .readme pre {
+    background: #12151a; border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px;
+    font-family: "SF Mono", ui-monospace, monospace; font-size: 11.5px; color: #a9b6c9; overflow: auto; margin: 8px 0;
+  }
+  .readme ul { margin: 6px 0; padding-left: 18px; color: #b9c1cf; font-size: 12.5px; }
+  .readme li { margin: 3px 0; }
+
+  /* git 记录 */
+  .commit {
+    display: grid; grid-template-columns: 58px 1fr auto; gap: 10px; align-items: center;
+    padding: 7px 8px; border-radius: 7px;
+  }
+  .commit:hover { background: #20242b; }
+  .commit .h { font-family: ui-monospace, monospace; font-size: 10.5px; color: #7f8ea3; }
+  .commit .m { font-size: 12.5px; color: #dbe1ea; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .commit .m small { color: var(--dim); font-size: 10.5px; margin-left: 6px; }
+  .commit .d { font-size: 10.5px; color: var(--dim); }
+  .cgraph { display: flex; flex-direction: column; }
+
+  /* 本地文件 */
+  .files { display: flex; flex-direction: column; }
+  .file {
+    display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center;
+    padding: 5px 8px 5px calc(8px + var(--ind, 0px)); border-radius: 6px; font-size: 12.5px;
+  }
+  .file:hover { background: #20242b; }
+  .file .fn { display: flex; align-items: center; gap: 7px; color: #cdd6e3; }
+  .file .ic { width: 13px; height: 13px; opacity: .55; }
+  .file.dir .fn { color: #9dc4ff; }
+  .file .fs { font-size: 10.5px; color: var(--dim); font-family: ui-monospace, monospace; }
+
+  .dfoot {
+    display: flex; align-items: center; gap: 9px; padding: 9px 16px;
+    border-top: 1px solid var(--line); flex: none;
+  }
+  .status { font-size: 12px; color: var(--ok); display: flex; align-items: center; gap: 6px; opacity: 0; transition: opacity .2s; }
+  .status.show { opacity: 1; }
+  .warnline {
+    display: flex; gap: 8px; align-items: center; font-size: 11.5px; color: #e8c68b;
+    background: rgba(224,163,62,.07); border: 1px solid rgba(224,163,62,.25);
+    border-radius: 7px; padding: 6px 9px; margin: 0 16px 9px;
+  }
+  .empty { color: var(--dim); font-size: 12.5px; text-align: center; padding: 40px 0; }
+</style>
+</head>
+<body>
+<div class="win">
+  <header>
+    <div class="brand">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round">
+          <circle cx="6" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="12" r="2.4"/>
+          <path d="M6 8.4v7.2M8.4 6h5.5a4 4 0 0 0 4 4"/>
+        </svg>
+      </div>
+      GitSwitch
+    </div>
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m16.5 16.5 4 4"/></svg>
+      <input placeholder="搜索平台 / 账号 / 项目…" />
+    </div>
+    <div class="spacer"></div>
+    <button class="btn">扫描本地仓库</button>
+    <button class="btn">读取 git 远程</button>
+  </header>
+
+  <div class="cols">
+    <!-- 1. 平台 / 账号 / 项目 -->
+    <aside class="col platforms">
+      <div class="col-head"><span>平台</span><span class="n" id="platCount"></span></div>
+      <div class="scroll" id="tree"></div>
+      <div class="col-foot"><button class="ghost">+ 添加平台及账号</button></div>
+    </aside>
+
+    <!-- 2. 该平台该账号的项目 -->
+    <section class="col projects">
+      <div class="col-head"><span id="projHead">项目</span><span class="n" id="projCount"></span></div>
+      <div class="scroll" style="padding:0"><div class="plist" id="plist"></div></div>
+      <div class="col-foot"><button class="btn primary wide" id="cloneBtn">克隆</button></div>
+    </section>
+
+    <!-- 3. 项目详情 -->
+    <main class="col detail">
+      <div class="dhead">
+        <div class="dtitle">
+          <h2 id="dName">iot-gateway</h2>
+          <span class="tag blue" id="dPlat">GitHub</span>
+          <span class="tag" id="dProto">SSH</span>
+          <span class="spacer"></span>
+          <span class="mono" id="dPath">~/WorkSpace/iot-gateway</span>
+        </div>
+        <div class="mono dpath" id="dUrl">git@github.com:zhangxinyu/iot-gateway.git</div>
+      </div>
+
+      <div class="switcher">
+        <div>
+          <div class="label">平台</div>
+          <div class="combo">
+            <div class="sel-t" data-menu="platMenu">
+              <span style="display:flex;align-items:center;gap:7px">
+                <span class="dot gh" style="width:15px;height:15px;font-size:9px" id="sPlatDot">G</span>
+                <span id="sPlatName">GitHub</span>
+              </span>
+              <i class="caret"></i>
+            </div>
+            <div class="menu" id="platMenu"></div>
+          </div>
+        </div>
+        <div>
+          <div class="label">账号 · 该平台下可供切换</div>
+          <div class="combo">
+            <div class="sel-t" data-menu="acctMenu">
+              <span style="display:flex;align-items:center;gap:7px">
+                <span class="avatar" id="sAcctAv">张</span>
+                <span id="sAcctName">张鑫宇 · 个人</span>
+              </span>
+              <i class="caret"></i>
+            </div>
+            <div class="menu" id="acctMenu"></div>
+          </div>
+        </div>
+        <div>
+          <div class="label">认证</div>
+          <div class="seg" id="authSeg">
+            <button class="on" data-auth="ssh">SSH</button>
+            <button data-auth="token">令牌</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <div class="tab on" data-tab="readme">README</div>
+        <div class="tab" data-tab="git">项目git记录</div>
+        <div class="tab" data-tab="files">本地文件</div>
+      </div>
+
+      <div class="pane" id="pane"></div>
+
+      <div class="warnline" id="warnline"></div>
+      <div class="dfoot">
+        <div class="status" id="toast">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" width="13" height="13"><path d="M4 12.5 9 17.5 20 6.5"/></svg>
+          <span id="toastText">已应用</span>
+        </div>
+        <span class="spacer"></span>
+        <button class="btn" id="testBtn">测试认证</button>
+        <button class="btn primary" id="applyBtn">应用到此仓库</button>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+const DB = [
+  {
+    id: "github", name: "GitHub", letter: "G", cls: "gh", host: "github.com",
+    accounts: [
+      {
+        id: "gh-me", label: "张鑫宇 · 个人", short: "张", name: "张鑫宇", email: "429092941@qq.com",
+        auth: "ssh", key: "~/.ssh/id_ed25519_github",
+        repos: [
+          { id: "r1", name: "iot-gateway", path: "~/WorkSpace/iot-gateway", url: "git@github.com:zhangxinyu/iot-gateway.git", branch: "main", dirty: 2, ovName: false, ovEmail: false },
+          { id: "r2", name: "spring-boot-demo", path: "~/WorkSpace/spring-boot-demo", url: "git@github.com:zhangxinyu/spring-boot-demo.git", branch: "dev", dirty: 0, ovName: false, ovEmail: false },
+        ],
+      },
+      {
+        id: "gh-alt", label: "zx-pro · 小号", short: "Z", name: "zx-pro", email: "zx.pro@gmail.com",
+        auth: "token", key: "",
+        repos: [
+          { id: "r3", name: "ruoyi-plus", path: "~/WorkSpace/ruoyi-plus", url: "git@github.com:zx-pro/ruoyi-plus.git", branch: "master", dirty: 0, ovName: false, ovEmail: false },
+        ],
+      },
+    ],
+  },
+  {
+    id: "corp", name: "公司 GitLab", letter: "C", cls: "corp", host: "gitlab.company.com",
+    accounts: [
+      {
+        id: "corp-me", label: "张鑫宇 · 公司", short: "张", name: "张鑫宇", email: "zhangxinyu@company.com",
+        auth: "ssh", key: "~/.ssh/id_ed25519_corp",
+        repos: [
+          { id: "r4", name: "erp-backend", path: "~/WorkSpace/erp-backend", url: "ssh://git@gitlab.company.com/erp/backend.git", branch: "release/2.4", dirty: 5, ovName: true, ovEmail: true, n: "张鑫宇", e: "zhangxinyu@company.com" },
+          { id: "r5", name: "erp-frontend", path: "~/WorkSpace/erp-frontend", url: "ssh://git@gitlab.company.com/erp/frontend.git", branch: "develop", dirty: 1, ovName: false, ovEmail: false },
+        ],
+      },
+    ],
+  },
+  {
+    id: "gitee", name: "Gitee", letter: "E", cls: "gitee", host: "gitee.com",
+    accounts: [
+      {
+        id: "gitee-a", label: "3237138707", short: "3", name: "3237138707", email: "3237138707@qq.com",
+        auth: "token", key: "",
+        repos: [
+          { id: "r6", name: "mqtt-bridge", path: "~/WorkSpace/mqtt-bridge", url: "https://gitee.com/3237138707/mqtt-bridge.git", branch: "main", dirty: 0, ovName: false, ovEmail: false },
+        ],
+      },
+    ],
+  },
+];
+
+const README = {
+  r1: `<h3>iot-gateway</h3>
+<p>物联网设备接入网关。基于 Spring Boot 3 + MQTT，负责设备鉴权、上行数据解析与规则转发。</p>
+<h3>快速开始</h3>
+<pre>mvn -pl iot-gateway spring-boot:run</pre>
+<h3>模块</h3>
+<ul><li><code>device-auth</code> 设备鉴权</li><li><code>mqtt-broker</code> 接入层</li><li><code>rule-engine</code> 规则引擎</li></ul>
+<h3>约定</h3>
+<p>分支 <code>main</code> 受保护，合并前需通过 <code>mvn verify</code>。</p>`,
+  default: `<h3>README</h3><p>该项目暂无 README，或尚未拉取到本地。</p>`,
+};
+
+const COMMITS = {
+  r1: [
+    ["9f2a1c7", "修复设备离线重连时心跳未重置", "张鑫宇", "2 小时前"],
+    ["4b8de01", "规则引擎支持嵌套条件表达式", "张鑫宇", "昨天 18:24"],
+    ["c71f3aa", "升级 RuoYi 依赖到 5.3.1", "李工", "11-22"],
+    ["0e5b942", "补充 MQTT 接入压力测试", "张鑫宇", "11-21"],
+    ["77ac203", "优化设备鉴权缓存失效策略", "王工", "11-19"],
+  ],
+  default: [["0000000", "尚无提交记录", "—", "—"]],
+};
+
+const FILES = {
+  r1: [
+    ["dir", "src", "", 0], ["dir", "main", "", 18], ["file", "pom.xml", "4.2 KB", 36],
+    ["file", "IotGatewayApplication.java", "1.1 KB", 36], ["dir", "mqtt", "", 36],
+    ["file", "MqttBrokerConfig.java", "3.8 KB", 54], ["dir", "rule", "", 36],
+    ["file", "README.md", "1.6 KB", 18], ["file", ".gitignore", "312 B", 18],
+  ],
+  default: [["file", "README.md", "—", 0], ["dir", "src", "", 0]],
+};
+
+const st = { plat: "github", acct: "gh-me", repo: "r1", tab: "readme", openPlats: ["github", "corp", "gitee"] };
+const $ = (id) => document.getElementById(id);
+const findPlat = (id) => DB.find(p => p.id === id);
+const findAcct = (pid, aid) => findPlat(pid)?.accounts.find(a => a.id === aid);
+const findRepo = () => {
+  for (const p of DB) for (const a of p.accounts) {
+    const r = a.repos.find(x => x.id === st.repo);
+    if (r) return { plat: p, acct: a, repo: r };
+  }
+  return null;
+};
+
+/* ---------- 左栏：平台树 ---------- */
+function renderTree() {
+  const html = DB.map(p => {
+    const open = st.openPlats.includes(p.id);
+    const nAcct = p.accounts.length;
+    const nRepo = p.accounts.reduce((s, a) => s + a.repos.length, 0);
+    let inner = "";
+    if (open) {
+      inner = p.accounts.map(a => {
+        const sel = a.id === st.acct;
+        const rows = a.repos.map(r =>
+          `<div class="proj-row ${r.id === st.repo ? "sel" : ""}" data-repo="${r.id}"><span class="sdot"></span><span>${r.name}</span></div>`
+        ).join("");
+        return `<div class="acct-row ${sel ? "sel" : ""}" data-plat="${p.id}" data-acct="${a.id}">
+            <span class="avatar">${a.short}</span>
+            <span class="acct-label">${a.label}<small>${a.email} · ${a.auth === "ssh" ? "SSH" : "令牌"}</small></span>
+            <span class="badge">${a.repos.length}</span>
+          </div>${rows}`;
+      }).join("");
+    }
+    return `<div class="plat-row ${open ? "sel" : ""}" data-plat-only="${p.id}">
+        <span class="dot ${p.cls}">${p.letter}</span>
+        <span>${p.name}</span>
+        <span style="display:flex;align-items:center;gap:8px">
+          <span class="badge">${nAcct} 账号 · ${nRepo} 项目</span>
+          <i class="caret-s ${open ? "open" : ""}"></i>
+        </span>
+      </div>${inner}`;
+  }).join("");
+  $("tree").innerHTML = html;
+  $("platCount").textContent = `${DB.length} 平台 · ${DB.reduce((s, p) => s + p.accounts.length, 0)} 账号`;
+
+  $("tree").querySelectorAll(".plat-row").forEach(el => el.onclick = () => {
+    const id = el.dataset.platOnly;
+    st.openPlats.includes(id) ? st.openPlats = st.openPlats.filter(x => x !== id) : st.openPlats.push(id);
+    renderTree();
+  });
+  $("tree").querySelectorAll(".acct-row").forEach(el => el.onclick = () => {
+    st.plat = el.dataset.plat; st.acct = el.dataset.acct;
+    const a = findAcct(st.plat, st.acct);
+    if (a?.repos[0]) st.repo = a.repos[0].id;
+    renderAll();
+  });
+  $("tree").querySelectorAll(".proj-row").forEach(el => el.onclick = () => {
+    st.repo = el.dataset.repo;
+    const f = findRepo(); st.plat = f.plat.id; st.acct = f.acct.id;
+    renderAll();
+  });
+}
+
+/* ---------- 中栏：项目卡片 ---------- */
+function renderProjects() {
+  const p = findPlat(st.plat), a = findAcct(st.plat, st.acct);
+  $("projHead").textContent = `${p.name} · ${a.label}`;
+  $("projCount").textContent = `${a.repos.length} 个项目`;
+  $("plist").innerHTML = a.repos.length ? a.repos.map(r => `
+    <div class="pcard ${r.id === st.repo ? "sel" : ""}" data-repo="${r.id}">
+      <div class="pn">${r.name}
+        <span class="spacer"></span>
+        ${r.dirty ? `<span class="chip">${r.dirty} 改动</span>` : `<span class="chip ok">干净</span>`}
+      </div>
+      <div class="pu">${r.url}</div>
+      <div class="pmeta"><span class="chip blue">${r.branch}</span><span class="chip">${a.auth === "ssh" ? "SSH" : "令牌"}</span></div>
+    </div>`).join("") : `<div class="empty">该账号下暂无项目<br>点击下方「克隆」拉取一个</div>`;
+
+  $("plist").querySelectorAll(".pcard").forEach(el => el.onclick = () => { st.repo = el.dataset.repo; renderAll(); });
+}
+
+/* ---------- 右栏：详情 ---------- */
+function renderDetail() {
+  const f = findRepo();
+  if (!f) return;
+  const { plat: p, acct: a, repo: r } = f;
+
+  $("dName").textContent = r.name;
+  $("dPlat").textContent = p.name;
+  $("dProto").textContent = r.url.startsWith("git@") || r.url.startsWith("ssh://") ? "SSH" : "HTTPS";
+  $("dPath").textContent = r.path;
+  $("dUrl").textContent = r.url;
+
+  $("sPlatDot").textContent = p.letter;
+  $("sPlatDot").className = "dot " + p.cls;
+  $("sPlatName").textContent = p.name;
+  $("sAcctAv").textContent = a.short;
+  $("sAcctName").textContent = a.label;
+  document.querySelectorAll("#authSeg button").forEach(b => b.classList.toggle("on", b.dataset.auth === a.auth));
+
+  // 平台下拉
+  $("platMenu").innerHTML = `<div class="menu-head">平台 · ${DB.length}</div>` + DB.map(pp => `
+    <div class="opt ${pp.id === p.id ? "sel" : ""}" data-p="${pp.id}">
+      <span class="dot ${pp.cls}" style="width:17px;height:17px;font-size:9px">${pp.letter}</span>
+      <span>${pp.name}<div class="meta">${pp.host}</div></span>
+      <span class="meta">${pp.accounts.length} 账号</span>
+    </div>`).join("");
+
+  // 账号下拉（按平台过滤）
+  const list = p.accounts;
+  $("acctMenu").innerHTML = `<div class="menu-head">${p.name} 下的账号 · ${list.length}</div>` + list.map(aa => `
+    <div class="opt ${aa.id === a.id ? "sel" : ""}" data-a="${aa.id}" data-p="${p.id}">
+      <span class="avatar">${aa.short}</span>
+      <span>${aa.label}<div class="meta">${aa.email}</div></span>
+      <span class="meta">${aa.auth === "ssh" ? "SSH" : "令牌"}</span>
+    </div>`).join("") +
+    `<div class="menu-head" style="border-top:1px solid #2b3038;margin-top:4px;padding-top:6px">+ 新增 ${p.name} 账号…</div>`;
+
+  $("platMenu").querySelectorAll(".opt").forEach(el => el.onclick = () => {
+    const np = el.dataset.p, first = findPlat(np).accounts[0];
+    st.plat = np; st.acct = first.id;
+    // 把当前仓库挂到新平台的首个账号下（原型里的移动语义）
+    if (first.repos.length) st.repo = first.repos[0].id;
+    closeMenus(); renderAll(); flash(`已切到 ${findPlat(np).name}`);
+  });
+  $("acctMenu").querySelectorAll(".opt").forEach(el => el.onclick = () => {
+    st.acct = el.dataset.a;
+    const na = findAcct(el.dataset.p, st.acct);
+    // 该项目现归属所选账号
+    if (na.repos.length) st.repo = na.repos[0].id;
+    closeMenus(); renderAll(); flash(`已切换账号：${na.name}`);
+  });
+
+  // README / git记录 / 文件
+  $("pane").innerHTML = st.tab === "readme"
+    ? `<div class="readme">${README[r.id] || README.default}</div>`
+    : st.tab === "git"
+      ? `<div class="cgraph">${(COMMITS[r.id] || COMMITS.default).map(([h, m, au, d]) => `
+          <div class="commit"><span class="h">${h}</span>
+          <span class="m">${m}<small>${au}</small></span><span class="d">${d}</span></div>`).join("")}</div>`
+      : `<div class="files">${(FILES[r.id] || FILES.default).map(([k, n, s, ind]) => `
+          <div class="file ${k === "dir" ? "dir" : ""}" style="--ind:${ind}px">
+            <span class="fn">
+              <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                ${k === "dir" ? '<path d="M3 7h5l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H3z"/>' : '<path d="M6 3h8l4 4v14H6z"/>'}
+              </svg>${n}</span>
+            <span class="fs">${s}</span><span class="fs">${k === "dir" ? "" : ""}</span>
+          </div>`).join("")}</div>`;
+
+  $("warnline").innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M12 3 2.5 20h19L12 3z"/><path d="M12 9v5"/></svg>
+    <span>写入范围：仅 <span class="mono">${r.path}/.git/config</span>，不改动 <span class="mono">~/.gitconfig</span>。
+    ${r.ovName || r.ovEmail ? "该仓库已开启独立姓名/邮箱覆盖。" : "姓名邮箱继承账号默认值。"}</span>`;
+}
+
+function renderAll() { renderTree(); renderProjects(); renderDetail(); }
+
+function closeMenus() {
+  document.querySelectorAll(".menu").forEach(m => m.classList.remove("show"));
+  document.querySelectorAll(".sel-t").forEach(t => t.classList.remove("open"));
+}
+document.querySelectorAll(".sel-t").forEach(t => {
+  t.onclick = (e) => {
+    e.stopPropagation();
+    const menu = $(t.dataset.menu), was = menu.classList.contains("show");
+    closeMenus();
+    if (!was) { menu.classList.add("show"); t.classList.add("open"); }
+  };
+});
+document.body.onclick = () => closeMenus();
+
+document.querySelectorAll(".tab").forEach(t => t.onclick = () => {
+  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("on", x === t));
+  st.tab = t.dataset.tab; renderDetail();
+});
+$("authSeg").onclick = (e) => {
+  if (!e.target.dataset.auth) return;
+  const f = findRepo(); f.acct.auth = e.target.dataset.auth;
+  renderAll(); flash(f.acct.auth === "token" ? "认证方式：令牌" : "认证方式：SSH 密钥");
+};
+$("applyBtn").onclick = () => {
+  const f = findRepo();
+  flash(`已写入 ${f.repo.path}/.git/config`);
+};
+$("testBtn").onclick = () => flash("认证可用 · 连接已通过");
+$("cloneBtn").onclick = () => flash("克隆：选择目标目录后开始…");
+
+let tt;
+function flash(msg, bad = false) {
+  const el = $("toast");
+  $("toastText").textContent = msg;
+  el.style.color = bad ? "#e8a1a1" : "#46c88b";
+  el.classList.add("show");
+  clearTimeout(tt); tt = setTimeout(() => el.classList.remove("show"), 2400);
+}
+
+renderAll();
+</script>
+</body>
+</html>
