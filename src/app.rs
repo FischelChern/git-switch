@@ -8,7 +8,10 @@ use std::collections::HashMap;
 use eframe::egui;
 
 use git_switch::git::config as gitcfg;
-use git_switch::git::{self as gitmod, GraphData, WorkStatus};
+use git_switch::git::{
+    self as gitmod, Branch, FileDiff, GraphData, WorkStatus, branch as gitbranch, diff as gitdiff,
+    discover, ops,
+};
 use git_switch::model::identity::Identity;
 use git_switch::model::repository::{IdentityOverride, Repository};
 use git_switch::store::Config;
@@ -25,6 +28,8 @@ pub enum DetailTab {
     Git,
     /// 工作区变更。
     Files,
+    /// 差异视图。
+    Diff,
 }
 
 impl DetailTab {
@@ -34,12 +39,13 @@ impl DetailTab {
             Self::Overview => "概览",
             Self::Git => "git",
             Self::Files => "文件",
+            Self::Diff => "diff",
         }
     }
 
     /// 全部 tab，按显示顺序。
-    pub fn all() -> [Self; 3] {
-        [Self::Overview, Self::Git, Self::Files]
+    pub fn all() -> [Self; 4] {
+        [Self::Overview, Self::Git, Self::Files, Self::Diff]
     }
 }
 
@@ -107,6 +113,24 @@ pub struct App {
     pub graph_error: Option<String>,
     /// 当前项目的工作区状态。
     pub status: Option<WorkStatus>,
+    /// 当前项目的 diff。
+    pub diffs: Vec<FileDiff>,
+    /// diff 读取失败的原因。
+    pub diff_error: Option<String>,
+    /// diff 视图模式：true 为左右并排。
+    pub diff_side_by_side: bool,
+    /// 当前分支列表。
+    pub branches: Vec<Branch>,
+    /// 标签列表。
+    pub tags: Vec<String>,
+    /// 分支输入框内容。
+    pub branch_input: String,
+    /// 提交信息输入框内容。
+    pub commit_message: String,
+    /// 扫描目录输入框内容。
+    pub scan_dir: String,
+    /// 上次扫描结果。
+    pub scanned: Vec<String>,
 }
 
 impl App {
@@ -174,6 +198,15 @@ impl App {
             graph: None,
             graph_error: None,
             status: None,
+            diffs: Vec::new(),
+            diff_error: None,
+            diff_side_by_side: true,
+            branches: Vec::new(),
+            tags: Vec::new(),
+            branch_input: String::new(),
+            commit_message: String::new(),
+            scan_dir: default_scan_dir(),
+            scanned: Vec::new(),
         };
         app.reload_repo();
         app
@@ -315,6 +348,198 @@ impl App {
             }
             Err(e) => self.push_log(LogKind::Err, format!("读取工作区状态失败：{e}")),
         }
+
+        self.diffs.clear();
+        self.diff_error = None;
+        match gitdiff::read_worktree_diff(&path) {
+            Ok(d) => {
+                if !d.is_empty() {
+                    self.push_log(LogKind::Out, format!("{} 个文件有差异", d.len()));
+                }
+                self.diffs = d;
+            }
+            Err(e) => {
+                self.diff_error = Some(e.to_string());
+                self.push_log(LogKind::Err, format!("读取 diff 失败：{e}"));
+            }
+        }
+
+        match gitbranch::list_branches(&path) {
+            Ok(b) => self.branches = b,
+            Err(e) => self.push_log(LogKind::Err, format!("读取分支失败：{e}")),
+        }
+        match gitbranch::list_tags(&path) {
+            Ok(t) => self.tags = t,
+            Err(e) => self.push_log(LogKind::Err, format!("读取标签失败：{e}")),
+        }
+    }
+
+    // ---- git 写操作 ----
+
+    /// 当前项目路径；没有选中项目时返回 `None`。
+    fn repo_path(&self) -> Option<std::path::PathBuf> {
+        self.current_repo().map(|r| r.path.clone())
+    }
+
+    /// 记一条命令并返回路径，供写操作复用。
+    fn begin_op(&mut self, command: &str) -> Option<std::path::PathBuf> {
+        let path = self.repo_path()?;
+        self.push_log(LogKind::Cmd, command.to_string());
+        Some(path)
+    }
+
+    fn finish_op(&mut self, result: Result<ops::OpResult, ops::OpError>, on_ok: &str) {
+        match result {
+            Ok(r) => {
+                for line in r.display().lines() {
+                    self.push_log(LogKind::Out, line.to_string());
+                }
+                self.flash(on_ok.to_string());
+            }
+            Err(e) => self.push_log(LogKind::Err, e.to_string()),
+        }
+        self.reload_repo();
+    }
+
+    /// 获取。
+    pub fn op_fetch(&mut self) {
+        if let Some(p) = self.begin_op("git fetch --all --prune") {
+            let r = ops::fetch(&p);
+            self.finish_op(r, "获取完成");
+        }
+    }
+
+    /// 拉取。
+    pub fn op_pull(&mut self) {
+        if let Some(p) = self.begin_op("git pull --no-rebase") {
+            let r = ops::pull(&p);
+            self.finish_op(r, "拉取完成");
+        }
+    }
+
+    /// 推送。
+    pub fn op_push(&mut self) {
+        if let Some(p) = self.begin_op("git push") {
+            let r = ops::push(&p);
+            self.finish_op(r, "推送完成");
+        }
+    }
+
+    /// 贮藏。
+    pub fn op_stash(&mut self) {
+        if let Some(p) = self.begin_op("git stash push -u") {
+            let r = ops::stash(&p);
+            self.finish_op(r, "已贮藏");
+        }
+    }
+
+    /// 暂存全部。
+    pub fn op_stage_all(&mut self) {
+        if let Some(p) = self.begin_op("git add -A") {
+            let r = ops::stage_all(&p);
+            self.finish_op(r, "已暂存全部改动");
+        }
+    }
+
+    /// 用输入框里的信息提交。
+    pub fn op_commit(&mut self) {
+        let msg = self.commit_message.clone();
+        if msg.trim().is_empty() {
+            self.flash("提交信息不能为空");
+            self.push_log(LogKind::Err, "提交信息不能为空");
+            return;
+        }
+        let cmd = format!("git commit -m '{}'", msg.trim());
+        if let Some(p) = self.begin_op(&cmd) {
+            let r = ops::commit(&p, &msg, true);
+            let ok = r.is_ok();
+            self.finish_op(r, "提交完成");
+            if ok {
+                self.commit_message.clear();
+            }
+        }
+    }
+
+    /// 新建并检出分支。
+    pub fn op_create_branch(&mut self) {
+        let name = self.branch_input.clone();
+        if name.trim().is_empty() {
+            self.flash("分支名为空");
+            return;
+        }
+        if let Some(p) = self.begin_op(&format!("git checkout -b {}", name.trim())) {
+            match gitbranch::create_branch(&p, &name, None, true) {
+                Ok(()) => {
+                    self.push_log(LogKind::Ok, format!("已新建并检出 {}", name.trim()));
+                    self.branch_input.clear();
+                    self.flash(format!("已切换 {}", name.trim()));
+                }
+                Err(e) => self.push_log(LogKind::Err, e.to_string()),
+            }
+            self.reload_repo();
+        }
+    }
+
+    /// 检出分支。
+    pub fn op_checkout(&mut self, name: &str) {
+        if let Some(p) = self.begin_op(&format!("git checkout {name}")) {
+            match gitbranch::checkout_branch(&p, name) {
+                Ok(()) => {
+                    self.push_log(LogKind::Ok, format!("已检出 {name}"));
+                    self.flash(format!("已切换到 {name}"));
+                }
+                Err(e) => self.push_log(LogKind::Err, e.to_string()),
+            }
+            self.reload_repo();
+        }
+    }
+
+    /// 删除分支。
+    pub fn op_delete_branch(&mut self, name: &str) {
+        if let Some(p) = self.begin_op(&format!("git branch -d {name}")) {
+            match gitbranch::delete_branch(&p, name, false) {
+                Ok(()) => {
+                    self.push_log(LogKind::Ok, format!("已删除 {name}"));
+                    self.flash(format!("已删除 {name}"));
+                }
+                Err(e) => self.push_log(LogKind::Err, e.to_string()),
+            }
+            self.reload_repo();
+        }
+    }
+
+    /// 扫描目录，记录发现但**不自动写入配置**（由用户确认后再加）。
+    pub fn op_scan(&mut self) {
+        let root = std::path::PathBuf::from(self.scan_dir.trim());
+        if self.scan_dir.trim().is_empty() {
+            self.flash("请填写要扫描的目录");
+            return;
+        }
+        self.push_log(
+            LogKind::Cmd,
+            format!("扫描 {}（最大深度 3）", root.display()),
+        );
+        let opts = discover::ScanOptions::default();
+        let found = discover::scan(&root, &opts);
+        self.scanned = found.iter().map(|f| f.dir_name()).collect();
+        if found.is_empty() {
+            self.push_log(LogKind::Out, "未发现 git 仓库".to_string());
+            self.flash("未发现仓库");
+            return;
+        }
+        let platforms = self.cfg.platforms.clone();
+        for f in &found {
+            let plat = f
+                .platform(&platforms)
+                .map(|p| p.name.clone())
+                .unwrap_or_else(|| "未匹配平台".to_string());
+            self.push_log(LogKind::Out, format!("{}  [{}]", f.path.display(), plat));
+        }
+        self.push_log(
+            LogKind::Ok,
+            format!("共发现 {} 个仓库（尚未加入配置）", found.len()),
+        );
+        self.flash(format!("发现 {} 个仓库", found.len()));
     }
 
     /// 切换项目身份：只改这个项目，并立即写 `.git/config`。
@@ -468,5 +693,20 @@ impl eframe::App for App {
         if self.toast.is_some() {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
+    }
+}
+
+/// 默认扫描目录：用户主目录下的 WorkSpace，不存在则退回主目录。
+fn default_scan_dir() -> String {
+    match dirs::home_dir() {
+        Some(home) => {
+            let workspace = home.join("WorkSpace");
+            if workspace.is_dir() {
+                workspace.display().to_string()
+            } else {
+                home.display().to_string()
+            }
+        }
+        None => String::new(),
     }
 }

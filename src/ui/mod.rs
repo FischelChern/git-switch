@@ -39,16 +39,28 @@ fn top_bar(ctx: &egui::Context, app: &mut App) {
                     .color(DIM)
                     .size(11.0),
                 );
+                if !app.scanned.is_empty() {
+                    ui.label(
+                        egui::RichText::new(format!("上次扫描发现 {} 个仓库", app.scanned.len()))
+                            .color(theme::WARN)
+                            .size(10.5),
+                    );
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("设置").clicked() {
                         app.push_log(crate::app::LogKind::Out, "设置面板尚未实现");
                         app.flash("设置尚未实现");
                     }
                     ui.add_space(4.0);
-                    if ui.button("扫描本地仓库").clicked() {
-                        app.push_log(crate::app::LogKind::Out, "扫描功能尚未实现");
-                        app.flash("扫描尚未实现");
+                    if ui.button("扫描").clicked() {
+                        app.op_scan();
                     }
+                    ui.add_space(4.0);
+                    ui.add(
+                        egui::TextEdit::singleline(&mut app.scan_dir)
+                            .hint_text("要扫描的目录")
+                            .desired_width(240.0),
+                    );
                 });
             });
         });

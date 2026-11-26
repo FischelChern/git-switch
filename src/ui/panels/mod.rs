@@ -321,6 +321,7 @@ pub fn detail(ctx: &egui::Context, app: &mut App) {
             DetailTab::Overview => overview(ui, app, &repo),
             DetailTab::Git => git_tab(ui, app),
             DetailTab::Files => files_tab(ui, app),
+            DetailTab::Diff => diff_tab(ui, app),
         }
     });
 }
@@ -512,6 +513,8 @@ fn git_tab(ui: &mut egui::Ui, app: &mut App) {
     let graph_w = graph.layout.lane_count as f32 * lane_w + 16.0;
     let lane_count = graph.layout.lane_count;
 
+    branch_bar(ui, app);
+
     ui.label(
         egui::RichText::new(format!(
             "{} 条提交 · {} 条泳道",
@@ -600,6 +603,222 @@ fn git_tab(ui: &mut egui::Ui, app: &mut App) {
                         ui.label(egui::RichText::new(&commit.author).color(DIM).size(10.0));
                     });
                 });
+            }
+        });
+}
+
+/// 分支与标签操作栏。
+fn branch_bar(ui: &mut egui::Ui, app: &mut App) {
+    ui.horizontal_wrapped(|ui| {
+        ui.label(egui::RichText::new("分支").color(DIM).size(10.0));
+
+        let branches = app.branches.clone();
+        let mut pending_checkout: Option<String> = None;
+        let mut pending_delete: Option<String> = None;
+
+        for b in branches.iter().filter(|b| !b.remote).take(6) {
+            let label = if b.current {
+                format!("◈ {}", b.name)
+            } else {
+                b.name.clone()
+            };
+            let resp = ui.selectable_label(b.current, egui::RichText::new(label).size(11.0));
+            if resp.clicked() && !b.current {
+                pending_checkout = Some(b.name.clone());
+            }
+            if !b.current {
+                resp.context_menu(|ui| {
+                    if ui.button("删除该分支").clicked() {
+                        pending_delete = Some(b.name.clone());
+                        ui.close_menu();
+                    }
+                });
+            }
+        }
+        if let Some(name) = pending_checkout {
+            app.op_checkout(&name);
+        }
+        if let Some(name) = pending_delete {
+            app.op_delete_branch(&name);
+        }
+
+        ui.add_space(6.0);
+        ui.add(
+            egui::TextEdit::singleline(&mut app.branch_input)
+                .hint_text("新分支名")
+                .desired_width(120.0),
+        );
+        if ui.small_button("新建并检出").clicked() {
+            app.op_create_branch();
+        }
+
+        if !app.tags.is_empty() {
+            ui.add_space(6.0);
+            ui.label(egui::RichText::new("标签").color(DIM).size(10.0));
+            for t in app.tags.iter().take(4) {
+                ui.label(egui::RichText::new(t).color(WARN).size(10.0));
+            }
+        }
+    });
+    ui.add_space(4.0);
+    ui.separator();
+
+    // 常用写操作
+    ui.horizontal_wrapped(|ui| {
+        if ui.small_button("暂存全部").clicked() {
+            app.op_stage_all();
+        }
+        if ui.small_button("提交").clicked() {
+            app.op_commit();
+        }
+        if ui.small_button("获取").clicked() {
+            app.op_fetch();
+        }
+        if ui.small_button("拉取").clicked() {
+            app.op_pull();
+        }
+        if ui.small_button("推送").clicked() {
+            app.op_push();
+        }
+        if ui.small_button("贮藏").clicked() {
+            app.op_stash();
+        }
+    });
+    ui.horizontal(|ui| {
+        ui.add(
+            egui::TextEdit::singleline(&mut app.commit_message)
+                .hint_text("提交信息（不能为空）")
+                .desired_width(ui.available_width() - 8.0),
+        );
+    });
+    ui.add_space(2.0);
+    ui.separator();
+}
+
+/// 差异视图。
+fn diff_tab(ui: &mut egui::Ui, app: &mut App) {
+    if app.diffs.is_empty() {
+        ui.add_space(16.0);
+        let msg = app
+            .diff_error
+            .clone()
+            .unwrap_or_else(|| "工作区没有差异".to_string());
+        ui.label(egui::RichText::new(msg).color(DIM).size(12.0));
+        return;
+    }
+
+    ui.horizontal(|ui| {
+        ui.selectable_value(&mut app.diff_side_by_side, true, "左右");
+        ui.selectable_value(&mut app.diff_side_by_side, false, "上下");
+        ui.label(
+            egui::RichText::new(format!("{} 个文件", app.diffs.len()))
+                .color(DIM)
+                .size(10.0),
+        );
+    });
+    ui.separator();
+
+    let side = app.diff_side_by_side;
+    egui::ScrollArea::both()
+        .id_salt("diff_scroll")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            for f in &app.diffs {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(f.display_path()).monospace().size(11.5));
+                    ui.label(
+                        egui::RichText::new(format!("+{}", f.additions))
+                            .color(OK)
+                            .size(10.5),
+                    );
+                    ui.label(
+                        egui::RichText::new(format!("-{}", f.deletions))
+                            .color(ERR)
+                            .size(10.5),
+                    );
+                    if f.binary {
+                        ui.label(egui::RichText::new("二进制").color(WARN).size(10.5));
+                    }
+                });
+
+                if f.binary {
+                    ui.label(
+                        egui::RichText::new("（二进制文件不展示逐行差异）")
+                            .color(DIM)
+                            .size(10.5),
+                    );
+                    ui.separator();
+                    continue;
+                }
+
+                if side {
+                    let rows = git_switch::git::diff::to_side_by_side(&f.rows);
+                    egui::Grid::new(format!("diff_side_{}", f.new_path))
+                        .num_columns(2)
+                        .striped(false)
+                        .spacing([10.0, 1.0])
+                        .show(ui, |ui| {
+                            for r in &rows {
+                                match &r.left {
+                                    Some(l) => {
+                                        ui.label(
+                                            egui::RichText::new(format!(
+                                                "{:>4} {}",
+                                                l.line_no.unwrap_or(0),
+                                                l.text
+                                            ))
+                                            .monospace()
+                                            .size(10.5)
+                                            .color(ERR),
+                                        );
+                                    }
+                                    None => {
+                                        ui.label(egui::RichText::new("").size(10.5));
+                                    }
+                                }
+                                match &r.right {
+                                    Some(l) => {
+                                        ui.label(
+                                            egui::RichText::new(format!(
+                                                "{:>4} {}",
+                                                l.line_no.unwrap_or(0),
+                                                l.text
+                                            ))
+                                            .monospace()
+                                            .size(10.5)
+                                            .color(OK),
+                                        );
+                                    }
+                                    None => {
+                                        ui.label(egui::RichText::new("").size(10.5));
+                                    }
+                                }
+                                ui.end_row();
+                            }
+                        });
+                } else {
+                    for r in &f.rows {
+                        let (text, color) = match r {
+                            git_switch::git::DiffRow::Context { new, .. } => (
+                                format!(" {:>4} {}", new.line_no.unwrap_or(0), new.text),
+                                MUTED,
+                            ),
+                            git_switch::git::DiffRow::Removed(l) => {
+                                (format!("-{:>4} {}", l.line_no.unwrap_or(0), l.text), ERR)
+                            }
+                            git_switch::git::DiffRow::Added(l) => {
+                                (format!("+{:>4} {}", l.line_no.unwrap_or(0), l.text), OK)
+                            }
+                        };
+                        ui.label(
+                            egui::RichText::new(text)
+                                .monospace()
+                                .size(10.5)
+                                .color(color),
+                        );
+                    }
+                }
+                ui.separator();
             }
         });
 }
