@@ -19,6 +19,7 @@ pub fn draw(ctx: &egui::Context, app: &mut App) {
     panels::sidebar(ctx, app);
     panels::projects(ctx, app);
     panels::detail(ctx, app);
+    panels::editor::clone_modal(ctx, app);
     toast(ctx, app);
 }
 
@@ -50,6 +51,10 @@ fn top_bar(ctx: &egui::Context, app: &mut App) {
                     if ui.button("设置").clicked() {
                         app.push_log(crate::app::LogKind::Out, "设置面板尚未实现");
                         app.flash("设置尚未实现");
+                    }
+                    ui.add_space(4.0);
+                    if ui.button("克隆").clicked() {
+                        app.open_clone();
                     }
                     ui.add_space(4.0);
                     if ui.button("扫描").clicked() {

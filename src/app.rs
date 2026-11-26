@@ -7,12 +7,16 @@ use std::collections::HashMap;
 
 use eframe::egui;
 
+use git_switch::git::clone::{CloneError, CloneRequest};
 use git_switch::git::config as gitcfg;
+use git_switch::git::file as gitfile;
 use git_switch::git::{
-    self as gitmod, Branch, FileDiff, GraphData, WorkStatus, branch as gitbranch, diff as gitdiff,
-    discover, ops,
+    self as gitmod, Branch, FileDiff, GraphData, WorkStatus, branch as gitbranch, clone,
+    diff as gitdiff, discover, ops,
 };
+use git_switch::model::highlight::{self, Diagnostic, Language, Token};
 use git_switch::model::identity::Identity;
+use git_switch::model::remote::RemoteUrl;
 use git_switch::model::repository::{IdentityOverride, Repository};
 use git_switch::store::Config;
 
@@ -30,6 +34,10 @@ pub enum DetailTab {
     Files,
     /// 差异视图。
     Diff,
+    /// README（读本地文件）。
+    Readme,
+    /// 代码编辑器。
+    Editor,
 }
 
 impl DetailTab {
@@ -40,12 +48,21 @@ impl DetailTab {
             Self::Git => "git",
             Self::Files => "文件",
             Self::Diff => "diff",
+            Self::Readme => "README",
+            Self::Editor => "编辑器",
         }
     }
 
     /// 全部 tab，按显示顺序。
-    pub fn all() -> [Self; 4] {
-        [Self::Overview, Self::Git, Self::Files, Self::Diff]
+    pub fn all() -> [Self; 6] {
+        [
+            Self::Overview,
+            Self::Git,
+            Self::Files,
+            Self::Diff,
+            Self::Readme,
+            Self::Editor,
+        ]
     }
 }
 
@@ -83,6 +100,63 @@ pub struct OverrideBuf {
     pub on: bool,
     pub name: String,
     pub email: String,
+}
+
+/// 编辑器里打开的文档。
+///
+/// `saved_text` 是磁盘上的内容，`text` 是编辑缓冲；两者不等即「未保存」。
+#[derive(Debug, Clone)]
+pub struct OpenDoc {
+    /// 相对仓库根的路径。
+    pub path: String,
+    /// 编辑缓冲。
+    pub text: String,
+    /// 磁盘上的内容，用于判断脏标记与放弃修改。
+    pub saved_text: String,
+    /// 识别到的语言。
+    pub lang: Language,
+    /// 语法错误诊断。
+    pub diags: Vec<Diagnostic>,
+    /// 每行的着色 token（按行缓存）。
+    pub tokens: Vec<Vec<Token>>,
+    /// 每行的 blame 信息；未跟踪文件或读取失败时为空。
+    pub blame: Vec<gitfile::BlameLine>,
+    /// blame 读取失败的原因（不阻断编辑）。
+    pub blame_error: Option<String>,
+}
+
+impl OpenDoc {
+    /// 是否有未保存的修改。
+    pub fn dirty(&self) -> bool {
+        self.text != self.saved_text
+    }
+
+    /// 重新计算着色与诊断。
+    pub fn reanalyze(&mut self) {
+        self.tokens = highlight::highlight(&self.text, self.lang);
+        self.diags = highlight::diagnose(&self.text, self.lang);
+    }
+}
+
+/// 克隆弹窗的状态。
+#[derive(Debug, Clone, Default)]
+pub struct CloneBuf {
+    /// 是否显示弹窗。
+    pub open: bool,
+    /// 仓库地址。
+    pub url: String,
+    /// 克隆到的父目录。
+    pub parent: String,
+    /// 目录名，留空则按远程仓库名推导。
+    pub dir_name: String,
+    /// 平台 id（由地址推导，展示用）。
+    pub platform_hint: String,
+    /// 使用的身份 id。
+    pub identity_id: String,
+    /// 上次操作的错误信息。
+    pub error: Option<String>,
+    /// 生成中（避免重复点击）。
+    pub busy: bool,
 }
 
 /// 整个应用的状态。
@@ -131,6 +205,16 @@ pub struct App {
     pub scan_dir: String,
     /// 上次扫描结果。
     pub scanned: Vec<String>,
+    /// 编辑器里打开的文档。
+    pub doc: Option<OpenDoc>,
+    /// README 内容缓存：(相对路径, 行列表)。
+    pub readme: Option<(String, Vec<String>)>,
+    /// README 读取失败的原因。
+    pub readme_error: Option<String>,
+    /// 克隆弹窗状态。
+    pub clone_buf: CloneBuf,
+    /// 编辑器是否显示 blame 列。
+    pub show_blame: bool,
 }
 
 impl App {
@@ -207,6 +291,11 @@ impl App {
             commit_message: String::new(),
             scan_dir: default_scan_dir(),
             scanned: Vec::new(),
+            doc: None,
+            readme: None,
+            readme_error: None,
+            clone_buf: CloneBuf::default(),
+            show_blame: true,
         };
         app.reload_repo();
         app
@@ -660,6 +749,329 @@ impl App {
         }
     }
 
+    // ---- 文件 / 编辑器 ----
+
+    /// 打开仓库内某个文件到编辑器；已打开同一个文件时先按未保存修改提示。
+    ///
+    /// 未跟踪文件的 blame 会失败，这里只记下原因，不阻断编辑。
+    pub fn open_doc(&mut self, rel: &str) {
+        let Some(path) = self.repo_path() else {
+            self.flash("请先选择项目");
+            return;
+        };
+        if let Some(doc) = &self.doc
+            && doc.dirty()
+            && doc.path != rel
+        {
+            self.flash("当前文件有未保存修改，请先保存或放弃");
+            return;
+        }
+        self.push_log(LogKind::Cmd, format!("打开 {}（{}）", rel, path.display()));
+        let content = match gitfile::read_file(&path, rel) {
+            Ok(c) => c,
+            Err(e) => {
+                self.push_log(LogKind::Err, format!("打开失败：{e}"));
+                return;
+            }
+        };
+        let lang = Language::from_path(std::path::Path::new(rel));
+        let mut doc = OpenDoc {
+            path: rel.to_string(),
+            text: content.text.clone(),
+            saved_text: content.text,
+            lang,
+            diags: Vec::new(),
+            tokens: Vec::new(),
+            blame: Vec::new(),
+            blame_error: None,
+        };
+        doc.reanalyze();
+        match gitfile::blame(&path, rel) {
+            Ok(b) => doc.blame = b,
+            Err(e) => doc.blame_error = Some(e.to_string()),
+        }
+        self.push_log(
+            LogKind::Out,
+            format!(
+                "{} 行 · {} · {} 条语法提示{}",
+                doc.text.lines().count(),
+                lang.label(),
+                doc.diags.len(),
+                match &doc.blame_error {
+                    Some(_) => " · blame 不可用（未跟踪）",
+                    None => "",
+                }
+            ),
+        );
+        self.doc = Some(doc);
+        self.tab = DetailTab::Editor;
+    }
+
+    /// 保存当前文档；磁盘写成功后刷新状态与 diff。
+    pub fn save_doc(&mut self) {
+        let Some(path) = self.repo_path() else {
+            return;
+        };
+        let Some(doc) = self.doc.clone() else {
+            return;
+        };
+        if !doc.dirty() {
+            self.flash("没有需要保存的修改");
+            return;
+        }
+        self.push_log(
+            LogKind::Cmd,
+            format!("写入 {}/{}", path.display(), doc.path),
+        );
+        match gitfile::write_file(&path, &doc.path, &doc.text) {
+            Ok(()) => {
+                self.push_log(
+                    LogKind::Ok,
+                    format!("已保存 {}（{} 字节）", doc.path, doc.text.len()),
+                );
+                self.flash(format!("已保存 {}", doc.path));
+                self.reload_repo();
+                if let Some(d) = &mut self.doc {
+                    d.saved_text = d.text.clone();
+                    d.reanalyze();
+                }
+            }
+            Err(e) => self.push_log(LogKind::Err, format!("保存失败：{e}")),
+        }
+    }
+
+    /// 放弃未保存修改，回到磁盘内容。
+    pub fn revert_doc(&mut self) {
+        let Some(doc) = &mut self.doc else {
+            return;
+        };
+        if !doc.dirty() {
+            return;
+        }
+        doc.text = doc.saved_text.clone();
+        doc.reanalyze();
+        self.flash("已放弃修改");
+    }
+
+    /// 读取仓库 README（本地文件，不是写死的字符串）。
+    pub fn load_readme(&mut self) {
+        self.readme = None;
+        self.readme_error = None;
+        let Some(path) = self.repo_path() else {
+            return;
+        };
+        self.push_log(LogKind::Cmd, format!("查找 {} 下的 README", path.display()));
+        match gitfile::find_readme(&path) {
+            Some(rel) => match gitfile::read_file(&path, &rel) {
+                Ok(c) => {
+                    let lines: Vec<String> = c.text.lines().map(|l| l.to_string()).collect();
+                    self.push_log(LogKind::Out, format!("读取 {rel}（{} 行）", lines.len()));
+                    self.readme = Some((rel, lines));
+                }
+                Err(e) => {
+                    self.readme_error = Some(e.to_string());
+                    self.push_log(LogKind::Err, format!("读取 README 失败：{e}"));
+                }
+            },
+            None => {
+                self.readme_error = Some("仓库里没有找到 README".to_string());
+                self.push_log(
+                    LogKind::Out,
+                    "未找到 README（已查根目录与 docs/）".to_string(),
+                );
+            }
+        }
+    }
+
+    // ---- 克隆 ----
+
+    /// 打开克隆弹窗，按当前平台预填身份与目录。
+    pub fn open_clone(&mut self) {
+        let platform = self.current_platform().map(|p| p.id.clone());
+        let identity = platform
+            .as_deref()
+            .and_then(|pid| self.identities_of(pid).first().map(|i| i.id.clone()));
+        self.clone_buf = CloneBuf {
+            open: true,
+            url: String::new(),
+            parent: self.scan_dir.clone(),
+            dir_name: String::new(),
+            platform_hint: String::new(),
+            identity_id: identity.unwrap_or_default(),
+            error: None,
+            busy: false,
+        };
+    }
+
+    /// 根据输入的地址推导平台与目录名（供弹窗实时提示）。
+    pub fn refresh_clone_hint(&mut self) {
+        let url = self.clone_buf.url.trim().to_string();
+        if url.is_empty() {
+            self.clone_buf.platform_hint.clear();
+            return;
+        }
+        match RemoteUrl::parse(&url) {
+            Ok(parsed) => {
+                let host = parsed.host.clone();
+                let matched = self
+                    .cfg
+                    .platforms
+                    .iter()
+                    .find(|p| p.matches_host(&host))
+                    .map(|p| p.id.clone());
+                self.clone_buf.platform_hint = match &matched {
+                    Some(pid) => {
+                        // 平台换了就换该平台的第一个身份，避免身份与平台错配
+                        if self.clone_buf.identity_id.is_empty()
+                            || self
+                                .cfg
+                                .identity(&self.clone_buf.identity_id)
+                                .map(|i| i.platform_id.as_str())
+                                != Some(pid.as_str())
+                        {
+                            self.clone_buf.identity_id = self
+                                .identities_of(pid)
+                                .first()
+                                .map(|i| i.id.clone())
+                                .unwrap_or_default();
+                        }
+                        self.cfg
+                            .platform(pid)
+                            .map(|p| p.name.clone())
+                            .unwrap_or_else(|| host.clone())
+                    }
+                    None => {
+                        self.clone_buf.identity_id.clear();
+                        format!("未匹配平台（{host}）")
+                    }
+                };
+            }
+            Err(_) => {
+                self.clone_buf.platform_hint = "地址无法解析".to_string();
+                self.clone_buf.identity_id.clear();
+            }
+        }
+    }
+
+    /// 执行克隆，并把选中的身份立刻写进新仓库。
+    pub fn run_clone(&mut self) {
+        if self.clone_buf.busy {
+            return;
+        }
+        let url = self.clone_buf.url.trim().to_string();
+        if url.is_empty() {
+            self.clone_buf.error = Some("请填写仓库地址".to_string());
+            return;
+        }
+        let parent = std::path::PathBuf::from(self.clone_buf.parent.trim());
+        if self.clone_buf.parent.trim().is_empty() {
+            self.clone_buf.error = Some("请填写克隆到哪个目录".to_string());
+            return;
+        }
+
+        let mut req = CloneRequest::new(url.clone(), parent.clone());
+        if !self.clone_buf.dir_name.trim().is_empty() {
+            req = req.with_dir_name(self.clone_buf.dir_name.trim());
+        }
+
+        // 先算目标路径，冲突立即反馈，不让 git 白跑一趟
+        let target = match req.target_path() {
+            Ok(t) => t,
+            Err(e) => {
+                self.clone_buf.error = Some(e.to_string());
+                return;
+            }
+        };
+        if target.exists()
+            && std::fs::read_dir(&target)
+                .map(|mut it| it.next().is_some())
+                .unwrap_or(true)
+        {
+            self.clone_buf.error = Some(format!("{} 已存在且非空", target.display()));
+            return;
+        }
+
+        let identity = self
+            .cfg
+            .identity(self.clone_buf.identity_id.trim())
+            .cloned();
+        let effective =
+            identity
+                .as_ref()
+                .map(|i| git_switch::model::repository::EffectiveIdentity {
+                    user_name: i.user_name.clone(),
+                    user_email: i.user_email.clone(),
+                    name_source: git_switch::model::repository::ValueSource::Identity,
+                    email_source: git_switch::model::repository::ValueSource::Identity,
+                });
+
+        self.push_log(
+            LogKind::Cmd,
+            format!("git clone {} {}", url, target.display()),
+        );
+        let outcome = match (&identity, &effective) {
+            (Some(i), Some(e)) => clone::clone_repo(&req, Some((i, e))),
+            _ => clone::clone_repo(&req, None),
+        };
+
+        match outcome {
+            Ok(o) => {
+                for line in o.output.lines() {
+                    if !line.trim().is_empty() {
+                        self.push_log(LogKind::Out, line.to_string());
+                    }
+                }
+                let dir_name = o
+                    .path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                self.push_log(LogKind::Ok, format!("已克隆到 {}", o.path.display()));
+                if identity.is_some() {
+                    self.push_log(LogKind::Ok, "身份已写入新仓库的 .git/config");
+                }
+
+                // 加入配置并选中
+                let platform_id = self
+                    .cfg
+                    .platforms
+                    .iter()
+                    .find(|p| p.matches_host(&url_host(&url)))
+                    .map(|p| p.id.clone());
+                if let Some(pid) = platform_id {
+                    let id = format!("r-{dir_name}");
+                    let mut repo =
+                        Repository::new(id.clone(), pid.clone(), o.path.clone(), url.clone());
+                    repo.identity_id = identity.as_ref().map(|i| i.id.clone());
+                    if self.cfg.repository(&id).is_none() {
+                        self.cfg.repositories.push(repo);
+                        match self.cfg.save() {
+                            Ok(()) => self.push_log(LogKind::Out, "已加入项目列表并保存配置"),
+                            Err(e) => self.push_log(LogKind::Err, format!("保存配置失败：{e}")),
+                        }
+                    }
+                    self.platform = Some(pid);
+                    self.clone_buf.open = false;
+                    self.clone_buf.error = None;
+                    self.select_repo(&id);
+                    self.flash(format!("已克隆 {dir_name}"));
+                } else {
+                    self.clone_buf.error =
+                        Some("克隆成功，但地址未匹配到平台，未加入项目列表".to_string());
+                    self.push_log(LogKind::Err, "地址未匹配到平台，仓库已在磁盘上但未加入配置");
+                }
+            }
+            Err(e) => {
+                let msg = match &e {
+                    CloneError::TargetNotEmpty(_) | CloneError::BadUrl(_) => e.to_string(),
+                    _ => e.to_string(),
+                };
+                self.push_log(LogKind::Err, format!("克隆失败：{msg}"));
+                self.clone_buf.error = Some(msg);
+            }
+        }
+    }
+
     /// 追加一行日志。
     pub fn push_log(&mut self, kind: LogKind, text: impl Into<String>) {
         self.log.push(LogEntry::new(kind, text));
@@ -694,6 +1106,11 @@ impl eframe::App for App {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
     }
+}
+
+/// 取地址的 host，失败时返回空串。
+fn url_host(url: &str) -> String {
+    RemoteUrl::parse(url).map(|u| u.host).unwrap_or_default()
 }
 
 /// 默认扫描目录：用户主目录下的 WorkSpace，不存在则退回主目录。

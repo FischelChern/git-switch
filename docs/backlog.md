@@ -19,12 +19,14 @@
 | P1-2 | 「扫描本地仓库」真实扫描指定目录 | done |
 | P1-3 | 提交弹窗（message 输入，空值拦截） | done |
 | P1-4 | Diff 走真实 `git diff`，去掉固定样例 | done |
-| P1-5 | README 读本地 `README.md` | todo |
+| P1-5 | README 读本地 `README.md` | done |
 | P1-6 | 文件视图加「全部文件 / 仅变更」切换 | todo |
-| P1-7 | 克隆「克隆到」加目录选择器 | todo |
+| P1-7 | 克隆「克隆到」加目录选择器 | done |
 | P1-8 | 分支新建 / 删除 / 重命名（重命名已有 API，界面先给新建/删除/检出） | done |
 | P1-9 | 标签创建 / 删除（API 完成，界面只列展示） | done |
 | P1-10 | 项目 / 身份 / 平台 的删除与编辑入口 | todo |
+| P1-11 | 代码编辑器：语法高亮 + 行内 blame + 保存/放弃 | done |
+| P1-12 | 克隆弹窗接入真实 `git clone`，成功后立即写入身份并加入配置 | done |
 
 ## P2 — 真实使用缺口
 
@@ -56,6 +58,11 @@
 | 日期 | 内容 |
 |---|---|
 | — | demo v1–v5 迭代：三栏布局、git 树、身份模型修正、克隆弹窗 |
+| — | `git/file.rs`：文件读写、目录浏览、blame 解析、README 定位（越界路径拒绝） |
+| — | `git/clone.rs`：地址校验、目录名推导、真实克隆 + 身份落实（失败清理半成品） |
+| — | `model/highlight.rs`：Rust/Java/JS/Python/Shell/TOML/JSON/XML/Markdown 着色 + 括号引号诊断 |
+| — | 界面：README tab 读本地文件、编辑器 tab（行号 + blame + 高亮 + 诊断 + 保存）、克隆弹窗 |
+| — | demo v7：克隆目标路径实时预览 + 浏览入口 |
 | — | 建立项目骨架与 `AGENTS.md` |
 | — | git 树：提交/父提交/refs 解析 + 泳道布局纯函数 + 界面绘制 |
 | — | 工作区状态：变更文件（含重命名原路径）、分支、ahead/behind |

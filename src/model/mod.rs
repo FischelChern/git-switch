@@ -13,6 +13,7 @@
 //! - 项目只持有 `identity_id` 引用，**项目不拥有身份，身份不拥有项目**。
 
 pub mod graph;
+pub mod highlight;
 pub mod identity;
 pub mod platform;
 pub mod remote;

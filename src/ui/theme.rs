@@ -26,6 +26,18 @@ pub const OK: Color32 = Color32::from_rgb(0x46, 0xc8, 0x8b);
 pub const WARN: Color32 = Color32::from_rgb(0xe0, 0xa3, 0x3e);
 /// 错误。
 pub const ERR: Color32 = Color32::from_rgb(0xff, 0x5c, 0x74);
+/// 语法高亮：关键字。
+pub const SYN_KEYWORD: Color32 = Color32::from_rgb(0xc7, 0x8b, 0xff);
+/// 语法高亮：字符串。
+pub const SYN_STR: Color32 = Color32::from_rgb(0x98, 0xc8, 0x79);
+/// 语法高亮：注释。
+pub const SYN_COMMENT: Color32 = Color32::from_rgb(0x6a, 0x73, 0x84);
+/// 语法高亮：数字。
+pub const SYN_NUMBER: Color32 = Color32::from_rgb(0xd1, 0x9a, 0x66);
+/// 语法高亮：注解 / 标签。
+pub const SYN_ANNOTATION: Color32 = Color32::from_rgb(0xe5, 0xc0, 0x7b);
+/// 语法高亮：链接 / 行内代码。
+pub const SYN_LINK: Color32 = Color32::from_rgb(0x61, 0xaf, 0xef);
 
 /// 应用深色主题。
 pub fn apply(ctx: &egui::Context) {

@@ -3,6 +3,8 @@
 //! 首版集中在一个文件里，函数按面板划分；后续按 `AGENTS.md` 6.2 拆成
 //! `sidebar.rs` / `projects.rs` / `detail.rs` / `terminal.rs`。
 
+pub mod editor;
+
 use eframe::egui;
 
 use git_switch::model::repository::Repository;
@@ -322,6 +324,8 @@ pub fn detail(ctx: &egui::Context, app: &mut App) {
             DetailTab::Git => git_tab(ui, app),
             DetailTab::Files => files_tab(ui, app),
             DetailTab::Diff => diff_tab(ui, app),
+            DetailTab::Readme => editor::readme_tab(ui, app),
+            DetailTab::Editor => editor::editor_tab(ui, app),
         }
     });
 }
@@ -852,6 +856,7 @@ fn files_tab(ui: &mut egui::Ui, app: &mut App) {
     );
     ui.separator();
 
+    let mut clicked: Option<String> = None;
     egui::ScrollArea::vertical()
         .id_salt("files_scroll")
         .auto_shrink([false, false])
@@ -873,7 +878,15 @@ fn files_tab(ui: &mut egui::Ui, app: &mut App) {
                             .size(11.0)
                             .color(color),
                     );
-                    ui.label(egui::RichText::new(&f.path).monospace().size(11.5));
+                    let open = ui
+                        .add(
+                            egui::Label::new(egui::RichText::new(&f.path).monospace().size(11.5))
+                                .sense(egui::Sense::click()),
+                        )
+                        .on_hover_text("点击用编辑器打开");
+                    if open.clicked() {
+                        clicked = Some(f.path.clone());
+                    }
                     if let Some(old) = &f.original_path {
                         ui.label(
                             egui::RichText::new(format!("← {old}"))
@@ -889,6 +902,9 @@ fn files_tab(ui: &mut egui::Ui, app: &mut App) {
                 });
             }
         });
+    if let Some(path) = clicked {
+        app.open_doc(&path);
+    }
 }
 
 /// 底部：终端日志。
