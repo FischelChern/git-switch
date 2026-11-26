@@ -42,10 +42,10 @@
 
 | ID | 任务 | 状态 |
 |---|---|---|
-| P3-1 | Rust 骨架：`model` 四个模块 + 单测 | todo |
-| P3-2 | `store/config.rs` 原子写 + `store/secret.rs` 钥匙串 | todo |
-| P3-3 | `git/exec.rs` 统一执行器 | todo |
-| P3-4 | `git/config.rs` 写入与回滚 + 隔离性集成测试 | todo |
+| P3-1 | Rust 骨架：`model` 四个模块 + 单测 | done |
+| P3-2 | `store/config.rs` 原子写 + `store/secret.rs` 钥匙串 | done |
+| P3-3 | `git/exec.rs` 统一执行器（超时 / stderr / 不经 shell） | done |
+| P3-4 | `git/config.rs` 写入与回滚 + 隔离性集成测试 | done |
 | P3-5 | `ui` 三栏骨架对齐 demo | todo |
 | P3-6 | 三平台构建与打包、CI | todo |
 
