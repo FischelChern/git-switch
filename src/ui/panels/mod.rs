@@ -81,6 +81,7 @@ pub fn sidebar(ctx: &egui::Context, app: &mut App) {
                                 .map(|(_, iid)| iid == &id.id)
                                 .unwrap_or(false);
                             let used = app.cfg.repositories_using(&id.id).len();
+                            let cred = app.cred_of(&id);
                             let text = format!(
                                 "    {} · {}{}",
                                 id.label,
@@ -93,14 +94,25 @@ pub fn sidebar(ctx: &egui::Context, app: &mut App) {
                                     String::new()
                                 }
                             );
-                            let resp =
-                                ui.selectable_label(in_use, egui::RichText::new(text).size(11.5));
-                            if resp
-                                .on_hover_text("点击：把这个身份应用到当前选中的项目")
-                                .clicked()
-                            {
-                                pending_identity = Some((p.id.clone(), id.id.clone()));
-                            }
+                            ui.horizontal(|ui| {
+                                ui.add_space(4.0);
+                                // 凭据状态徽标：状态来自真实钥匙串查询
+                                ui.label(
+                                    egui::RichText::new(cred.glyph())
+                                        .monospace()
+                                        .size(11.0)
+                                        .color(cred_color(cred)),
+                                )
+                                .on_hover_text(cred.label());
+                                let resp = ui
+                                    .selectable_label(in_use, egui::RichText::new(text).size(11.5));
+                                if resp
+                                    .on_hover_text("点击：把这个身份应用到当前选中的项目")
+                                    .clicked()
+                                {
+                                    pending_identity = Some((p.id.clone(), id.id.clone()));
+                                }
+                            });
                         }
                         ui.add_space(2.0);
                     }
@@ -382,6 +394,31 @@ fn overview(ui: &mut egui::Ui, app: &mut App, repo: &Repository) {
                 if let Some(new_id) = chosen {
                     app.switch_identity(&repo.id, &new_id);
                 }
+            }
+
+            // 凭据状态：来自真实钥匙串查询，不做「已保存」的默认假设
+            if let Some(id) = &identity {
+                let cred = app.cred_of(id);
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new(format!("{} {}", cred.glyph(), cred.label()))
+                            .color(cred_color(cred))
+                            .size(10.5),
+                    );
+                });
+            }
+        });
+
+        ui.add_space(12.0);
+
+        ui.vertical(|ui| {
+            ui.label(egui::RichText::new("认证").color(DIM).size(10.0));
+            if ui
+                .button("测试认证")
+                .on_hover_text("本地自洽性检查：协议与认证方式、钥匙串凭据、未做网络探测时明确标注")
+                .clicked()
+            {
+                app.test_auth();
             }
         });
     });
@@ -904,6 +941,17 @@ fn files_tab(ui: &mut egui::Ui, app: &mut App) {
         });
     if let Some(path) = clicked {
         app.open_doc(&path);
+    }
+}
+
+/// 凭据状态对应的颜色。
+fn cred_color(status: git_switch::store::CredStatus) -> egui::Color32 {
+    use git_switch::store::CredStatus as C;
+    match status {
+        C::Saved => OK,
+        C::Missing => WARN,
+        C::NotRequired => DIM,
+        C::Unavailable => ERR,
     }
 }
 

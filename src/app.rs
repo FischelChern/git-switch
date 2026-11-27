@@ -18,7 +18,7 @@ use git_switch::model::highlight::{self, Diagnostic, Language, Token};
 use git_switch::model::identity::Identity;
 use git_switch::model::remote::RemoteUrl;
 use git_switch::model::repository::{IdentityOverride, Repository};
-use git_switch::store::Config;
+use git_switch::store::{Config, CredStatus, Level, authcheck, credential};
 
 use crate::ui;
 
@@ -215,6 +215,8 @@ pub struct App {
     pub clone_buf: CloneBuf,
     /// 编辑器是否显示 blame 列。
     pub show_blame: bool,
+    /// 各身份的凭据状态缓存；钥匙串访问较慢，不在每帧查询。
+    pub creds: HashMap<String, CredStatus>,
 }
 
 impl App {
@@ -296,9 +298,73 @@ impl App {
             readme_error: None,
             clone_buf: CloneBuf::default(),
             show_blame: true,
+            creds: HashMap::new(),
         };
         app.reload_repo();
+        app.refresh_creds();
         app
+    }
+
+    /// 重新查询所有身份的凭据状态。
+    pub fn refresh_creds(&mut self) {
+        self.creds.clear();
+        let mut states = Vec::new();
+        for id in &self.cfg.identities {
+            states.push((id.id.clone(), credential::status(id)));
+        }
+        self.creds.extend(states);
+    }
+
+    /// 取某身份的凭据状态；未缓存时回退为「无法访问」。
+    pub fn cred_of(&self, identity: &Identity) -> CredStatus {
+        self.creds
+            .get(&identity.id)
+            .copied()
+            .unwrap_or(CredStatus::Unavailable)
+    }
+
+    /// 测试认证：本地自洽性检查，不发网络请求。
+    pub fn test_auth(&mut self) {
+        let Some(repo) = self.current_repo().cloned() else {
+            self.flash("请先选择项目");
+            return;
+        };
+        let Some(identity) = self.identity_of(&repo).cloned() else {
+            self.flash("该项目尚未选择身份");
+            self.push_log(LogKind::Err, "测试认证失败：项目未绑定身份".to_string());
+            return;
+        };
+
+        let cred = credential::status(&identity);
+        let parsed = git_switch::model::remote::RemoteUrl::parse(&repo.remote_url).ok();
+        let protocol = parsed.as_ref().map(|p| p.protocol);
+
+        self.push_log(
+            LogKind::Cmd,
+            format!(
+                "# 测试认证：{} · {} · {}",
+                identity.label,
+                identity.auth.label(),
+                repo.dir_name()
+            ),
+        );
+        self.push_log(
+            LogKind::Out,
+            format!("钥匙串条目：{}", authcheck::secret_account(&identity)),
+        );
+
+        let report = authcheck::run(&identity, cred, &repo.remote_url, protocol);
+        for (level, line) in report.lines() {
+            let kind = match level {
+                Level::Pass => LogKind::Ok,
+                Level::Warn => LogKind::Out,
+                Level::Fail => LogKind::Err,
+            };
+            self.push_log(kind, line);
+        }
+        self.flash(format!("{} · {}", report.level().label(), identity.label));
+        // 状态可能刚变过，刷新缓存让徽标同步
+        self.refresh_creds();
     }
 
     // ---- 查询 ----
