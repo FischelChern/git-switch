@@ -57,6 +57,10 @@
   .caret-s.open{transform:rotate(180deg)}
   .badge{font-size:10.5px;color:var(--dim);white-space:nowrap}
   .acct-row{display:grid;grid-template-columns:20px 1fr auto;gap:8px;align-items:center;padding:6px 8px 6px 14px;border-radius:8px;cursor:pointer;font-size:12.5px}
+  .cred{width:15px;height:15px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex:0 0 auto}
+  .cred.saved{color:#46c88b;background:rgba(70,200,139,.14);border:1px solid #2c6349}
+  .cred.missing{color:#e0a33e;background:rgba(224,163,62,.14);border:1px solid #6b5227}
+  .cred.noSecret{color:#656d7b;background:transparent;border:1px solid #2b3038}
   .acct-row:hover{background:#1e232a}
   .acct-row.sel{background:var(--accent-soft);box-shadow:inset 0 0 0 1px #31587f}
   .avatar{width:19px;height:19px;border-radius:50%;display:grid;place-items:center;font-size:9.5px;font-weight:600;background:#2c3f5c;color:#b9d2f5;border:1px solid #3b5d86;flex:none}
@@ -414,6 +418,7 @@
               <span style="display:flex;align-items:center;gap:7px;min-width:0">
                 <span class="avatar" id="sAcctAv">张</span>
                 <span id="sAcctName" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">张鑫宇 · 个人</span>
+                <span class="cred noSecret" id="sCred" title="凭据状态">—</span>
               </span>
               <i class="caret"></i>
             </div>
@@ -499,15 +504,15 @@
 /* ================= 数据 ================= */
 const DB = [
   { id:"github", name:"GitHub", letter:"G", cls:"gh", host:"github.com", accounts:[
-    { id:"gh-me", label:"张鑫宇 · 个人", short:"张", name:"张鑫宇", email:"429092941@qq.com", auth:"ssh", key:"~/.ssh/id_ed25519_github" },
-    { id:"gh-alt", label:"zx-pro · 小号", short:"Z", name:"zx-pro", email:"zx.pro@gmail.com", auth:"token", key:"" },
+    { id:"gh-me", label:"张鑫宇 · 个人", short:"张", name:"张鑫宇", email:"429092941@qq.com", auth:"ssh", key:"~/.ssh/id_ed25519_github", needsSecret:false },
+    { id:"gh-alt", label:"zx-pro · 小号", short:"Z", name:"zx-pro", email:"zx.pro@gmail.com", auth:"token", key:"", needsSecret:true },
   ]},
   { id:"corp", name:"公司 GitLab", letter:"C", cls:"corp", host:"gitlab.company.com", accounts:[
-    { id:"corp-me", label:"张鑫宇 · 公司", short:"张", name:"张鑫宇", email:"zhangxinyu@company.com", auth:"ssh", key:"~/.ssh/id_ed25519_corp" },
-    { id:"corp-bot", label:"CI 机器人", short:"CI", name:"gitlab-ci", email:"ci@company.com", auth:"token", key:"" },
+    { id:"corp-me", label:"张鑫宇 · 公司", short:"张", name:"张鑫宇", email:"zhangxinyu@company.com", auth:"ssh", key:"~/.ssh/id_ed25519_corp", needsSecret:false },
+    { id:"corp-bot", label:"CI 机器人", short:"CI", name:"gitlab-ci", email:"ci@company.com", auth:"token", key:"", needsSecret:true },
   ]},
   { id:"gitee", name:"Gitee", letter:"E", cls:"gitee", host:"gitee.com", accounts:[
-    { id:"gitee-a", label:"3237138707", short:"3", name:"3237138707", email:"3237138707@qq.com", auth:"token", key:"" },
+    { id:"gitee-a", label:"3237138707", short:"3", name:"3237138707", email:"3237138707@qq.com", auth:"token", key:"", needsSecret:true },
   ]},
 ];
 
@@ -727,6 +732,31 @@ const branchesOf = (rid)=>BRANCHES[rid] || BRANCHES.default;
 const langOf = (n)=>/\.java$/.test(n)?"java":/\.xml$/.test(n)?"xml":/\.md$/.test(n)?"md":"txt";
 const authLabel = (a)=>({ssh:"SSH 密钥",token:"令牌",password:"账号密码",file:"凭据文件"})[a] || a;
 
+/* 钥匙串状态：原型用本地 Map 模拟系统钥匙串，真实实现走 keyring。
+   三种状态：
+   - saved    已保存密文，可测试连接
+   - missing  需要密文但没存（新增身份后还没填）
+   - noSecret 该认证方式本就不需要密文（SSH / 凭据文件） */
+const KEYCHAIN = new Map();   // identityId -> 密文（原型内不外显、不回显）
+const SECRET_STATE = new Map(); // identityId -> "saved" | "missing"
+const secretState = (a)=>{
+  if (!a.needsSecret) return "noSecret";
+  return SECRET_STATE.get(a.id) || "missing";
+};
+const secretStateLabel = (a)=>{
+  const st = secretState(a);
+  if (st==="saved") return "凭据已保存";
+  if (st==="missing") return "凭据未保存";
+  return "无需密文";
+};
+
+/* 初始钥匙串状态：模拟「cf 之前已存过令牌」，新增身份默认未保存 */
+SECRET_STATE.set("gh-alt", "saved");
+KEYCHAIN.set("gh-alt", "<原型内占位，不外显>");
+SECRET_STATE.set("corp-bot", "saved");
+KEYCHAIN.set("corp-bot", "<原型内占位，不外显>");
+SECRET_STATE.set("gitee-a", "missing");
+
 /* ================= 终端 ================= */
 const termLines = [];
 function term(html){ termLines.push(html); if (termLines.length>80) termLines.shift(); if (st.termTab==="terminal") renderTerm(); }
@@ -823,6 +853,7 @@ function renderTree(){
           title="点击：把该身份应用到当前选中的项目">
           <span class="avatar">${esc(a.short)}</span>
           <span class="acct-label">${esc(a.label)}<small>${esc(a.email)} · ${authLabel(a.auth)}</small></span>
+          <span class="cred ${secretState(a)}" title="${esc(secretStateLabel(a))}">${secretState(a)==="saved"?"✓":(secretState(a)==="missing"?"!":"—")}</span>
           <span class="badge">${isCur?"当前":(used?used+" 项目":"")}</span>
         </div>`;
     }).join("") : "";
@@ -1273,6 +1304,13 @@ function renderDetail(){
   $("sPlatName").textContent = p.name;
   $("sAcctAv").textContent = a.short;
   $("sAcctName").textContent = a.label;
+  const credEl = $("sCred");
+  if (credEl){
+    const cs = secretState(a);
+    credEl.className = "cred " + cs;
+    credEl.textContent = cs==="saved" ? "✓" : (cs==="missing" ? "!" : "—");
+    credEl.title = secretStateLabel(a);
+  }
   document.querySelectorAll("#authSeg button").forEach(b=>b.classList.toggle("on", b.dataset.auth===a.auth));
 
   $("acctMenu").innerHTML = `<div class="menu-head">${esc(p.name)} 下可用于本项目的身份 · ${p.accounts.length}</div>` +
@@ -1456,13 +1494,13 @@ function openAddAccount(platId){
   const fieldsFor = (a)=>{
     if (a==="ssh") return `<div class="mrow">
       <div class="mf"><label>私钥路径</label><input class="min" id="mKey" value="~/.ssh/id_ed25519" /></div>
-      <div class="mf"><label>私钥口令</label><input class="min" type="password" placeholder="可选，存钥匙串" /></div></div>`;
-    if (a==="token") return `<div class="mf"><label>访问令牌</label><input class="min" type="password" placeholder="ghp_… / glpat-…" /></div>
+      <div class="mf"><label>私钥口令</label><input class="min" type="password" id="mSecret" placeholder="可选，存钥匙串" /></div></div>`;
+    if (a==="token") return `<div class="mf"><label>访问令牌</label><input class="min" type="password" id="mSecret" placeholder="ghp_… / glpat-…" /></div>
       <div class="mrow"><div class="mf"><label>令牌类型</label><select class="msel"><option>Personal Access Token</option><option>OAuth</option><option>Deploy Token</option></select></div>
       <div class="mf"><label>过期时间</label><input class="min" placeholder="2027-01-01" /></div></div>`;
     if (a==="password") return `<div class="mrow">
       <div class="mf"><label>用户名</label><input class="min" placeholder="gitlab 用户名" /></div>
-      <div class="mf"><label>密码</label><input class="min" type="password" /></div></div>`;
+      <div class="mf"><label>密码</label><input class="min" type="password" id="mSecret" /></div></div>`;
     return `<div class="mf"><label>凭据文件路径</label><input class="min" value="~/.netrc" /></div>
       <div class="mf"><label>credential.helper</label><select class="msel"><option>store</option><option>cache</option><option>manager</option></select></div>`;
   };
@@ -1488,14 +1526,35 @@ function openAddAccount(platId){
     }
     const p = findPlat(pid);
     const key = chosen==="ssh" ? ($("mKey")?.value||"~/.ssh/id_ed25519") : "";
-    p.accounts.push({ id:"a"+Date.now(), label, short:label[0]||"A", name, email, auth:chosen, key });
+    const needsSecret = (chosen==="token" || chosen==="password");
+    const secret = ($("mSecret")?.value || "").trim();
+    const id = "a"+Date.now();
+    p.accounts.push({ id, label, short:label[0]||"A", name, email, auth:chosen, key, needsSecret });
+
+    // 只有真拿到了密文才标记「已保存」；空值不伪造成功
+    if (needsSecret && secret){
+      SECRET_STATE.set(id, "saved");
+      KEYCHAIN.set(id, secret);
+    } else if (needsSecret){
+      SECRET_STATE.set(id, "missing");
+    }
+
     closeModal();
     st.plat = pid;
     if (!findRepo()) { const first = reposOfPlat(pid)[0]; st.repo = first ? first.id : ""; }
     renderAll();
-    termCmd(`# 将 ${label} 的${authLabel(chosen)}写入系统钥匙串`);
-    termOut(`账号已添加到 ${p.name}`, "ok");
-    flash(`已添加账号：${label}（${authLabel(chosen)}）`);
+
+    termCmd(`# 写入系统钥匙串：git-switch:identity:${id}`);
+    if (needsSecret && secret){
+      termOut(`凭据已保存到钥匙串（不回显内容）`, "ok");
+      flash(`已添加账号：${label}（${authLabel(chosen)}）`);
+    } else if (needsSecret){
+      termOut(`凭据未保存：本次未填写${authLabel(chosen)}，测试认证将失败`, "err");
+      flash(`已添加账号，但凭据未保存：${label}`);
+    } else {
+      termOut(`账号已添加到 ${p.name}（${authLabel(chosen)} 无需钥匙串密文）`, "ok");
+      flash(`已添加账号：${label}（${authLabel(chosen)}）`);
+    }
   };
 }
 
@@ -1579,6 +1638,52 @@ $("authSeg").onclick = (e)=>{
   flash(`认证方式：${authLabel(f.acct.auth)}`);
 };
 
+/* 测试认证：结论由数据决定，不做「一律通过」的假动作。
+   检查项：
+   1) 认证方式是否与远程协议匹配（SSH 身份推 ssh 地址）
+   2) SSH：私钥路径是否已填（原型无法访问真实文件，因此标出「需在实际环境中确认」）
+   3) 令牌/密码：钥匙串里是否确有密文
+   结果分三级：pass / warn / fail，全部写进终端与顶部提示。 */
+function testAuth(f){
+  const host = findPlat(f.plat.id).host;
+  const a = f.acct;
+  const remote = f.repo.url || "";
+  const isSshRemote = /^(git@|ssh:)/.test(remote);
+  const rows = [];
+  let worst = "pass";
+
+  const push = (ok, text)=>{
+    rows.push(`${ok==="pass"?"✓":(ok==="warn"?"!":"✗")} ${text}`);
+    if (ok==="fail") worst = "fail";
+    else if (ok==="warn" && worst!=="fail") worst = "warn";
+  };
+
+  // 1) 协议与认证方式是否自洽
+  if (a.auth==="ssh" && !isSshRemote && remote) push("fail", `远程地址是 ${remote.split(":")[0]}，但身份用 SSH 密钥，推送会被拒绝`);
+  else if (a.auth!=="ssh" && isSshRemote && remote) push("fail", "远程地址是 SSH，但身份用令牌/密码，无法鉴权");
+  else push("pass", `认证方式 ${authLabel(a.auth)} 与远程协议一致`);
+
+  // 2) 该认证方式需要的凭据
+  const st = secretState(a);
+  if (st==="saved") push("pass", "凭据已存在于系统钥匙串（内容不回显）");
+  else if (st==="missing") push("fail", "凭据未保存：请展开该项目所属身份重新填写并保存");
+  else if (a.auth==="ssh") {
+    if (!a.key || !a.key.trim()) push("warn", "未填私钥路径，将回退到全局 ssh 配置");
+    else push("warn", `私钥路径 ${a.key} 需在实机上确认可读（原型不访问文件系统）`);
+  } else {
+    push("warn", "凭据文件方式：需确认 ~/.netrc 权限为 600");
+  }
+
+  // 3) 主机连通性：原型不发真实网络请求，明确说明限制
+  push("warn", `未做真实网络探测（原型不访问 ${host}）；实际实现将执行 ssh -T 或读取远端 HEAD`);
+
+  termCmd(a.auth==="ssh" ? `ssh -T git@${host}` : `git -C ${f.repo.path} ls-remote --exit-code origin`);
+  rows.forEach(r=>termOut(r, worst==="fail" && r.startsWith("✗") ? "err" : (r.startsWith("!") ? "" : "ok")));
+  const label = worst==="pass" ? "认证可用" : (worst==="warn" ? "需人工确认" : "认证不可用");
+  flash(`${label} · ${a.label}`);
+  termOut(`结论：${label}`, worst==="fail" ? "err" : "ok");
+}
+
 document.querySelectorAll("[data-act]").forEach(el=>el.onclick=()=>{
   const act = el.dataset.act, f = findRepo(), n = fileList(f.repo.id).length;
   const map = {
@@ -1594,7 +1699,7 @@ document.querySelectorAll("[data-act]").forEach(el=>el.onclick=()=>{
     tag:["git tag --list",branchesOf(f.repo.id).tags.join("\n")||"(无标签)"],
     log:["git log --oneline --graph -10",commitsOf(f.repo.id).slice(0,10).map(c=>`* ${c.h} ${c.msg}`).join("\n")],
     pr:["gh pr list --state open",`共 ${(PRS[f.repo.id]||[]).filter(x=>x.state!=="merged").length} 个待合并 PR`],
-    test:[`ssh -T git@${findPlat(f.plat.id).host}`,"认证通过 · 连接正常"],
+    test:null,   // 由下面的 testAuth() 真实计算，不写死
     apply:(()=>{
       const rr = f.repo, aa = findAcct(st.plat, rr.accountId), ov = rr.ov;
       const nn = (ov && ov.on && ov.name.trim()) ? ov.name.trim() : aa.name;
@@ -1604,6 +1709,10 @@ git config --local user.email "${mm}"`,
               `已写入 ${rr.path}/.git/config${ov && ov.on ? "（含项目覆盖）" : ""}`];
     })(),
   };
+  if (act==="test"){
+    testAuth(f);
+    return;
+  }
   const [cmd,out] = map[act] || ["git status","ok"];
   termCmd(cmd.split("\n")[0]);
   out.split("\n").forEach(l=>termOut(l));
